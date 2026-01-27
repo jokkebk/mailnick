@@ -18,21 +18,27 @@
 	let syncing = $state(false);
 	let error = $state<string | null>(null);
 	let successMessage = $state<string | null>(null);
+	let syncDays = $state(7); // Default to 7 days
+	let showSyncOptions = $state(false);
 
 	onMount(async () => {
 		// Check URL params for auth status
 		const params = new URLSearchParams(window.location.search);
-		if (params.get('success') === 'authenticated') {
-			successMessage = 'Successfully authenticated with Gmail!';
+		const justAuthenticated = params.get('success') === 'authenticated';
+
+		if (justAuthenticated) {
+			successMessage = 'Successfully authenticated with Gmail! Syncing emails...';
 			authenticated = true;
 			// Clean up URL
 			window.history.replaceState({}, '', '/');
+			// Automatically sync emails after authentication
+			await syncEmails();
 		} else if (params.get('error')) {
 			error = `Authentication error: ${params.get('error')}`;
+		} else {
+			// Try to fetch emails to check if authenticated
+			await loadEmails();
 		}
-
-		// Try to fetch emails to check if authenticated
-		await loadEmails();
 	});
 
 	async function loadEmails() {
@@ -56,16 +62,23 @@
 		}
 	}
 
-	async function syncEmails() {
+	async function syncEmails(days?: number) {
+		const daysToSync = days || syncDays;
 		syncing = true;
 		error = null;
 		successMessage = null;
+		showSyncOptions = false;
 		try {
-			const response = await fetch('/api/emails/sync', { method: 'POST' });
+			const response = await fetch('/api/emails/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ days: daysToSync })
+			});
 			const data = await response.json();
 
 			if (response.ok) {
-				successMessage = `Synced ${data.syncedCount} new emails (${data.totalUnread} total unread)`;
+				syncDays = daysToSync; // Update current sync period
+				successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
 				await loadEmails();
 			} else {
 				error = data.error || 'Failed to sync emails';
@@ -101,10 +114,26 @@
 		<div class="container-fluid">
 			<span class="navbar-brand mb-0 h1">📧 MailNick</span>
 			{#if authenticated}
-				<div>
-					<button class="btn btn-primary" onclick={syncEmails} disabled={syncing}>
-						{syncing ? 'Syncing...' : 'Sync Emails'}
+				<div class="btn-group">
+					<button class="btn btn-primary" onclick={() => syncEmails()} disabled={syncing}>
+						{syncing ? 'Syncing...' : `Sync (${syncDays} days)`}
 					</button>
+					<button
+						class="btn btn-primary dropdown-toggle dropdown-toggle-split"
+						onclick={() => (showSyncOptions = !showSyncOptions)}
+						disabled={syncing}
+					>
+						<span class="sr-only">Toggle Dropdown</span>
+					</button>
+					{#if showSyncOptions}
+						<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
+							<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -154,12 +183,18 @@
 			<div class="row">
 				<div class="col-12">
 					<div class="d-flex justify-content-between align-items-center mb-3">
-						<h3>Unread Emails ({emails.length})</h3>
+						<h3>
+							Unread Emails ({emails.length})
+							<small class="text-muted" style="font-size: 0.6em;">
+								from last {syncDays} days
+							</small>
+						</h3>
 					</div>
 
 					{#if emails.length === 0}
 						<div class="alert alert-info">
-							No unread emails found. Click "Sync Emails" to fetch the latest emails from Gmail.
+							No unread emails found in the last {syncDays} days. Click "Sync Emails" to refresh, or
+							use the dropdown to fetch a longer period.
 						</div>
 					{:else}
 						<div class="list-group">

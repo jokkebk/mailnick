@@ -12,13 +12,21 @@ function extractDomain(email: string): string {
 	return parts.length > 1 ? parts[1] : email;
 }
 
-export async function syncUnreadEmails() {
+export async function syncUnreadEmails(days: number = 7) {
 	const gmail = await getGmailClient();
+
+	// Calculate date for query (Gmail uses YYYY/MM/DD format)
+	const dateThreshold = new Date();
+	dateThreshold.setDate(dateThreshold.getDate() - days);
+	const dateStr = dateThreshold.toISOString().split('T')[0].replace(/-/g, '/');
+
+	// Build query: unread emails after the date threshold
+	const query = `is:unread after:${dateStr}`;
 
 	// Fetch list of unread messages
 	const response = await gmail.users.messages.list({
 		userId: 'me',
-		q: 'is:unread',
+		q: query,
 		maxResults: 100
 	});
 
