@@ -39,10 +39,10 @@ export const GET: RequestHandler = async ({ url }) => {
 				expiresAt: new Date(tokensData.expiry_date)
 			});
 		}
-
-		throw redirect(302, '/?success=authenticated');
 	} catch (error) {
 		console.error('Auth callback error:', error);
 		throw redirect(302, '/?error=auth_failed');
 	}
+
+	throw redirect(302, '/?success=authenticated');
 };
