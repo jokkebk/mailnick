@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { emails } from '$lib/server/db/schema';
+import { emails, tokens } from '$lib/server/db/schema';
 import { desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
@@ -9,6 +9,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
 
 	try {
+		// Check if user is authenticated by checking for stored tokens
+		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, 'default')).get();
+
+		if (!storedTokens) {
+			return json({ error: 'Not authenticated' }, { status: 401 });
+		}
+
 		let query = db.select().from(emails).$dynamic();
 
 		if (unreadOnly) {
