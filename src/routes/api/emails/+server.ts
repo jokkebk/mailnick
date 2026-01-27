@@ -1,12 +1,13 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, tokens } from '$lib/server/db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, gte, and } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const category = url.searchParams.get('category');
 	const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
+	const days = parseInt(url.searchParams.get('days') || '7');
 
 	try {
 		// Check if user is authenticated by checking for stored tokens
@@ -16,17 +17,27 @@ export const GET: RequestHandler = async ({ url }) => {
 			return json({ error: 'Not authenticated' }, { status: 401 });
 		}
 
-		let query = db.select().from(emails).$dynamic();
+		// Calculate date threshold
+		const dateThreshold = new Date();
+		dateThreshold.setDate(dateThreshold.getDate() - days);
+
+		// Build query with date filter
+		const conditions = [gte(emails.receivedAt, dateThreshold)];
 
 		if (unreadOnly) {
-			query = query.where(eq(emails.isUnread, true));
+			conditions.push(eq(emails.isUnread, true));
 		}
 
 		if (category) {
-			query = query.where(eq(emails.category, category));
+			conditions.push(eq(emails.category, category));
 		}
 
-		const result = await query.orderBy(desc(emails.receivedAt)).limit(100);
+		const result = await db
+			.select()
+			.from(emails)
+			.where(and(...conditions))
+			.orderBy(desc(emails.receivedAt))
+			.limit(100);
 
 		return json({ emails: result });
 	} catch (error) {

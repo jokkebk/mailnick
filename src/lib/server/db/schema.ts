@@ -32,3 +32,17 @@ export const tokens = sqliteTable('tokens', {
 	refreshToken: text('refresh_token').notNull(),
 	expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull()
 });
+
+export const actionHistory = sqliteTable('action_history', {
+	id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+	emailId: text('email_id')
+		.notNull()
+		.references(() => emails.id),
+	actionType: text('action_type').notNull(), // 'mark_read', 'archive', 'trash', 'label'
+	originalState: text('original_state').notNull(), // JSON: {isUnread, labelIds}
+	timestamp: integer('timestamp', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	undone: integer('undone', { mode: 'boolean' }).default(false),
+	expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull()
+});

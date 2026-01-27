@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS tokens (
 	refresh_token text NOT NULL,
 	expires_at integer NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS action_history (
+	id text PRIMARY KEY NOT NULL,
+	email_id text NOT NULL,
+	action_type text NOT NULL,
+	original_state text NOT NULL,
+	timestamp integer NOT NULL,
+	undone integer DEFAULT 0,
+	expires_at integer NOT NULL,
+	FOREIGN KEY (email_id) REFERENCES emails(id)
+);
 `;
 
 db.exec(migration);

@@ -5,21 +5,79 @@
 		id: string;
 		from: string;
 		fromDomain: string;
+		to: string | null;
 		subject: string | null;
 		snippet: string | null;
 		receivedAt: string;
 		isUnread: boolean;
+		labelIds: string;
 		category: string | null;
+		expanded?: boolean;
+		processing?: boolean;
+	}
+
+	interface ActionHistory {
+		id: string;
+		emailId: string;
+		actionType: string;
+		originalState: string;
+		timestamp: string;
+		undone: boolean;
+		expiresAt: string;
+	}
+
+	interface EmailWithAction {
+		email: Email;
+		action: ActionHistory;
 	}
 
 	let authenticated = $state(false);
 	let emails = $state<Email[]>([]);
+	let emailsWithActions = $state<EmailWithAction[]>([]);
 	let loading = $state(false);
 	let syncing = $state(false);
 	let error = $state<string | null>(null);
 	let successMessage = $state<string | null>(null);
 	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
+
+	// Table sorting and filtering
+	let sortColumn = $state<'from' | 'to' | 'subject' | 'receivedAt'>('receivedAt');
+	let sortDirection = $state<'asc' | 'desc'>('desc');
+	let filterFrom = $state('');
+	let filterTo = $state('');
+	let filterSubject = $state('');
+
+	// Sorting and filtering logic
+	const sortedEmails = $derived.by(() => {
+		const sorted = [...emails];
+		sorted.sort((a, b) => {
+			let aVal = a[sortColumn];
+			let bVal = b[sortColumn];
+
+			if (aVal === null) return 1;
+			if (bVal === null) return -1;
+
+			if (sortColumn === 'receivedAt') {
+				const comparison = new Date(aVal).getTime() - new Date(bVal).getTime();
+				return sortDirection === 'asc' ? comparison : -comparison;
+			}
+
+			const comparison = String(aVal).localeCompare(String(bVal));
+			return sortDirection === 'asc' ? comparison : -comparison;
+		});
+		return sorted;
+	});
+
+	const filteredAndSortedEmails = $derived.by(() => {
+		return sortedEmails.filter((email) => {
+			return (
+				(!filterFrom || email.from.toLowerCase().includes(filterFrom.toLowerCase())) &&
+				(!filterTo || email.to?.toLowerCase().includes(filterTo.toLowerCase())) &&
+				(!filterSubject || email.subject?.toLowerCase().includes(filterSubject.toLowerCase()))
+			);
+		});
+	});
 
 	onMount(async () => {
 		// Check URL params for auth status
@@ -45,11 +103,17 @@
 		loading = true;
 		error = null;
 		try {
-			const response = await fetch('/api/emails?unreadOnly=true');
-			const data = await response.json();
+			// Fetch unread emails
+			const unreadResponse = await fetch(`/api/emails?unreadOnly=true&days=${syncDays}`);
+			const unreadData = await unreadResponse.json();
 
-			if (response.ok) {
-				emails = data.emails;
+			// Fetch emails with actions
+			const actionsResponse = await fetch('/api/emails/with-actions');
+			const actionsData = await actionsResponse.json();
+
+			if (unreadResponse.ok && actionsResponse.ok) {
+				emails = unreadData.emails;
+				emailsWithActions = actionsData.emailsWithActions;
 				authenticated = true;
 			} else {
 				authenticated = false;
@@ -105,6 +169,133 @@
 		} else {
 			const days = Math.floor(hours / 24);
 			return `${days}d ago`;
+		}
+	}
+
+	// Table interaction functions
+	function toggleSort(column: typeof sortColumn) {
+		if (sortColumn === column) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortColumn = column;
+			sortDirection = 'asc';
+		}
+	}
+
+	function toggleExpand(email: Email) {
+		email.expanded = !email.expanded;
+		emails = [...emails]; // Trigger reactivity
+	}
+
+	function stopPropagation(event: MouseEvent) {
+		event.stopPropagation();
+	}
+
+	// Action handlers
+	async function handleMarkRead(emailId: string) {
+		const email = emails.find((e) => e.id === emailId);
+		if (!email || !email.isUnread) return;
+
+		email.processing = true;
+		emails = [...emails];
+
+		try {
+			const response = await fetch(`/api/emails/${emailId}/mark-read`, { method: 'POST' });
+			if (!response.ok) throw new Error('Failed');
+
+			// Reload both unread and action lists
+			await loadEmails();
+			successMessage = 'Email marked as read';
+		} catch (err) {
+			error = 'Failed to mark as read';
+			email.processing = false;
+			emails = [...emails];
+		}
+	}
+
+	async function handleArchive(emailId: string) {
+		const email = emails.find((e) => e.id === emailId);
+		if (!email) return;
+
+		email.processing = true;
+		emails = [...emails];
+
+		try {
+			const response = await fetch(`/api/emails/${emailId}/archive`, { method: 'POST' });
+			if (!response.ok) throw new Error('Failed');
+
+			await loadEmails();
+			successMessage = 'Email archived';
+		} catch (err) {
+			error = 'Failed to archive email';
+			email.processing = false;
+			emails = [...emails];
+		}
+	}
+
+	async function handleTrash(emailId: string) {
+		const email = emails.find((e) => e.id === emailId);
+		if (!email) return;
+
+		email.processing = true;
+		emails = [...emails];
+
+		try {
+			const response = await fetch(`/api/emails/${emailId}/trash`, { method: 'POST' });
+			if (!response.ok) throw new Error('Failed');
+
+			await loadEmails();
+			successMessage = 'Email moved to trash';
+		} catch (err) {
+			error = 'Failed to trash email';
+			email.processing = false;
+			emails = [...emails];
+		}
+	}
+
+	async function handleLabel(emailId: string) {
+		const email = emails.find((e) => e.id === emailId);
+		if (!email) return;
+
+		email.processing = true;
+		emails = [...emails];
+
+		try {
+			const response = await fetch(`/api/emails/${emailId}/label`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ labelName: 'TODO' })
+			});
+			if (!response.ok) throw new Error('Failed');
+
+			await loadEmails();
+			successMessage = 'TODO label added';
+		} catch (err) {
+			error = 'Failed to add label';
+			email.processing = false;
+			emails = [...emails];
+		}
+	}
+
+	async function handleUndo(actionId: string) {
+		try {
+			const response = await fetch(`/api/actions/${actionId}/undo`, { method: 'POST' });
+			if (!response.ok) throw new Error('Failed to undo');
+
+			await loadEmails();
+			successMessage = 'Action undone';
+		} catch (err) {
+			error = 'Failed to undo action';
+		}
+	}
+
+	function getActionLabel(actionType: string): string {
+		switch (actionType) {
+			case 'mark_read': return 'Marked as read';
+			case 'archive': return 'Archived';
+			case 'trash': return 'Trashed';
+			case 'label': return 'Labeled';
+			default: return actionType;
 		}
 	}
 </script>
@@ -180,7 +371,8 @@
 				</div>
 			</div>
 		{:else}
-			<div class="row">
+			<!-- Unread Emails Section -->
+			<div class="row mb-5">
 				<div class="col-12">
 					<div class="d-flex justify-content-between align-items-center mb-3">
 						<h3>
@@ -193,30 +385,196 @@
 
 					{#if emails.length === 0}
 						<div class="alert alert-info">
-							No unread emails found in the last {syncDays} days. Click "Sync Emails" to refresh, or
+							No unread emails found in the last {syncDays} days. Click "Sync" to refresh, or
 							use the dropdown to fetch a longer period.
 						</div>
 					{:else}
-						<div class="list-group">
-							{#each emails as email (email.id)}
-								<div class="list-group-item list-group-item-action">
-									<div class="d-flex w-100 justify-content-between">
-										<h5 class="mb-1">
-											{email.subject || '(No subject)'}
-											{#if email.isUnread}
-												<span class="badge badge-primary ml-2">Unread</span>
-											{/if}
-										</h5>
-										<small>{formatDate(email.receivedAt)}</small>
-									</div>
-									<p class="mb-1">
-										<strong>From:</strong>
-										{email.from}
-										<span class="badge badge-secondary ml-2">{email.fromDomain}</span>
-									</p>
-									<p class="mb-1 text-muted">{email.snippet}</p>
-								</div>
-							{/each}
+						<div class="table-responsive">
+							<table class="table table-hover table-sm">
+								<thead class="thead-dark">
+									<tr>
+										<th style="width: 30%;">
+											From
+											<button
+												class="btn btn-sm btn-link text-white p-0 ml-1"
+												onclick={() => toggleSort('from')}
+												title="Sort by From"
+											>
+												{sortColumn === 'from' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
+											</button>
+											<input
+												type="text"
+												class="form-control form-control-sm mt-1"
+												placeholder="Filter..."
+												bind:value={filterFrom}
+											/>
+										</th>
+										<th style="width: 20%;">
+											To
+											<button
+												class="btn btn-sm btn-link text-white p-0 ml-1"
+												onclick={() => toggleSort('to')}
+												title="Sort by To"
+											>
+												{sortColumn === 'to' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
+											</button>
+											<input
+												type="text"
+												class="form-control form-control-sm mt-1"
+												placeholder="Filter..."
+												bind:value={filterTo}
+											/>
+										</th>
+										<th style="width: 30%;">
+											Subject
+											<button
+												class="btn btn-sm btn-link text-white p-0 ml-1"
+												onclick={() => toggleSort('subject')}
+												title="Sort by Subject"
+											>
+												{sortColumn === 'subject' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
+											</button>
+											<input
+												type="text"
+												class="form-control form-control-sm mt-1"
+												placeholder="Filter..."
+												bind:value={filterSubject}
+											/>
+										</th>
+										<th style="width: 10%;">
+											Date
+											<button
+												class="btn btn-sm btn-link text-white p-0 ml-1"
+												onclick={() => toggleSort('receivedAt')}
+												title="Sort by Date"
+											>
+												{sortColumn === 'receivedAt'
+													? sortDirection === 'asc'
+														? '↑'
+														: '↓'
+													: '⇅'}
+											</button>
+										</th>
+										<th style="width: 10%;">Actions</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each filteredAndSortedEmails as email (email.id)}
+										<tr
+											onclick={() => toggleExpand(email)}
+											class:table-primary={email.isUnread}
+											style="cursor: pointer;"
+										>
+											<td>{email.from}</td>
+											<td>{email.to || '-'}</td>
+											<td>{email.subject || '(No subject)'}</td>
+											<td>{formatDate(email.receivedAt)}</td>
+											<td onclick={stopPropagation}>
+												<div class="btn-group btn-group-sm">
+													<button
+														class="btn btn-outline-secondary"
+														onclick={() => handleMarkRead(email.id)}
+														disabled={!email.isUnread || email.processing}
+														title="Mark read"
+													>
+														✓
+													</button>
+													<button
+														class="btn btn-outline-secondary"
+														onclick={() => handleArchive(email.id)}
+														disabled={email.processing}
+														title="Archive"
+													>
+														📥
+													</button>
+													<button
+														class="btn btn-outline-secondary"
+														onclick={() => handleTrash(email.id)}
+														disabled={email.processing}
+														title="Trash"
+													>
+														🗑
+													</button>
+													<button
+														class="btn btn-outline-secondary"
+														onclick={() => handleLabel(email.id)}
+														disabled={email.processing}
+														title="TODO"
+													>
+														⚡
+													</button>
+												</div>
+											</td>
+										</tr>
+										{#if email.expanded}
+											<tr>
+												<td colspan="5" class="bg-light">
+													<small class="text-muted">{email.snippet}</small>
+												</td>
+											</tr>
+										{/if}
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Read Emails Section (with actions) -->
+			<div class="row">
+				<div class="col-12">
+					<div class="d-flex justify-content-between align-items-center mb-3">
+						<h3>
+							Recently Handled ({emailsWithActions.length})
+							<small class="text-muted" style="font-size: 0.6em;">
+								actions from last 2 days
+							</small>
+						</h3>
+					</div>
+
+					{#if emailsWithActions.length === 0}
+						<div class="alert alert-info">
+							No recent actions. Mark emails as read, archive, or take other actions to see them here.
+						</div>
+					{:else}
+						<div class="table-responsive">
+							<table class="table table-hover table-sm">
+								<thead class="thead-light">
+									<tr>
+										<th style="width: 25%;">From</th>
+										<th style="width: 20%;">To</th>
+										<th style="width: 25%;">Subject</th>
+										<th style="width: 15%;">Action</th>
+										<th style="width: 10%;">When</th>
+										<th style="width: 5%;">Undo</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each emailsWithActions as { email, action } (action.id)}
+										<tr>
+											<td>{email.from}</td>
+											<td>{email.to || '-'}</td>
+											<td>{email.subject || '(No subject)'}</td>
+											<td>
+												<span class="badge badge-secondary">
+													{getActionLabel(action.actionType)}
+												</span>
+											</td>
+											<td>{formatDate(action.timestamp)}</td>
+											<td>
+												<button
+													class="btn btn-sm btn-outline-primary"
+													onclick={() => handleUndo(action.id)}
+													title="Undo this action"
+												>
+													↶
+												</button>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
 						</div>
 					{/if}
 				</div>
