@@ -21,9 +21,24 @@
 		onArchive: (emailId: string) => void;
 		onTrash: (emailId: string) => void;
 		onLabel: (emailId: string) => void;
+		onBatchMarkRead?: (emailIds: string[]) => Promise<void>;
+		onBatchArchive?: (emailIds: string[]) => Promise<void>;
+		onBatchTrash?: (emailIds: string[]) => Promise<void>;
+		onBatchLabel?: (emailIds: string[]) => Promise<void>;
 	}
 
-	let { emails, syncDays, onMarkRead, onArchive, onTrash, onLabel }: Props = $props();
+	let {
+		emails,
+		syncDays,
+		onMarkRead,
+		onArchive,
+		onTrash,
+		onLabel,
+		onBatchMarkRead,
+		onBatchArchive,
+		onBatchTrash,
+		onBatchLabel
+	}: Props = $props();
 
 	// Table sorting and filtering
 	let sortColumn = $state<'from' | 'to' | 'subject' | 'receivedAt'>('receivedAt');
@@ -151,6 +166,33 @@
 		filteredAndSortedEmails.length > 0 &&
 			filteredAndSortedEmails.every((email) => selectedIds.has(email.id))
 	);
+
+	const selectedCount = $derived(selectedIds.size);
+	const selectedEmailIds = $derived(Array.from(selectedIds));
+
+	let batchProcessing = $state(false);
+
+	function deselectAll() {
+		selectedIds = new Set();
+		lastClickedIndex = null;
+	}
+
+	async function handleBatchAction(
+		action: 'markRead' | 'archive' | 'trash' | 'label',
+		handler?: (emailIds: string[]) => Promise<void>
+	) {
+		if (!handler || selectedCount === 0) return;
+
+		batchProcessing = true;
+		try {
+			await handler(selectedEmailIds);
+			deselectAll();
+		} catch (error) {
+			console.error(`Batch ${action} failed:`, error);
+		} finally {
+			batchProcessing = false;
+		}
+	}
 </script>
 
 {#if emails.length === 0}
@@ -159,6 +201,51 @@
 		to fetch a longer period.
 	</div>
 {:else}
+	{#if selectedCount > 0}
+		<div class="batch-toolbar">
+			<div class="batch-info">
+				<button class="btn btn-sm btn-link p-0" onclick={deselectAll}>
+					<strong>{selectedCount}</strong> email{selectedCount !== 1 ? 's' : ''} selected
+				</button>
+			</div>
+			<div class="batch-actions">
+				<div class="btn-group btn-group-sm">
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('markRead', onBatchMarkRead)}
+						disabled={batchProcessing || !onBatchMarkRead}
+						title="Mark read"
+					>
+						✓ Mark read
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('archive', onBatchArchive)}
+						disabled={batchProcessing || !onBatchArchive}
+						title="Archive"
+					>
+						📥 Archive
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('trash', onBatchTrash)}
+						disabled={batchProcessing || !onBatchTrash}
+						title="Trash"
+					>
+						🗑 Trash
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('label', onBatchLabel)}
+						disabled={batchProcessing || !onBatchLabel}
+						title="Add TODO label"
+					>
+						⚡ Label
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 	<div class="table-responsive">
 		<table class="table table-sm email-table">
 			<thead class="thead-dark">
@@ -304,6 +391,43 @@
 {/if}
 
 <style>
+	.batch-toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.75rem 1rem;
+		background-color: #e7f3ff;
+		border: 1px solid #b3d9ff;
+		border-radius: 0.25rem;
+		margin-bottom: 1rem;
+		animation: slideDown 0.2s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.batch-info button {
+		color: #004085;
+		text-decoration: none;
+	}
+
+	.batch-info button:hover {
+		text-decoration: underline;
+	}
+
+	.batch-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
 	.email-table {
 		border-collapse: separate;
 		border-spacing: 0;

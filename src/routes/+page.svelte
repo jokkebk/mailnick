@@ -349,6 +349,103 @@
 		}
 	}
 
+	// Batch action handlers
+	async function handleBatchMarkRead(emailIds: string[]) {
+		if (!selectedAccountId) return;
+
+		const promises = emailIds.map((id) =>
+			fetch(accountUrl(`/api/emails/${id}/mark-read`), { method: 'POST' })
+		);
+
+		try {
+			const results = await Promise.all(promises);
+			const failedCount = results.filter((r) => !r.ok).length;
+
+			if (failedCount > 0) {
+				throw new Error(`${failedCount} email(s) failed`);
+			}
+
+			await loadEmails();
+			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} marked as read`;
+		} catch (err) {
+			error = `Failed to mark emails as read`;
+			throw err;
+		}
+	}
+
+	async function handleBatchArchive(emailIds: string[]) {
+		if (!selectedAccountId) return;
+
+		const promises = emailIds.map((id) =>
+			fetch(accountUrl(`/api/emails/${id}/archive`), { method: 'POST' })
+		);
+
+		try {
+			const results = await Promise.all(promises);
+			const failedCount = results.filter((r) => !r.ok).length;
+
+			if (failedCount > 0) {
+				throw new Error(`${failedCount} email(s) failed`);
+			}
+
+			await loadEmails();
+			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} archived`;
+		} catch (err) {
+			error = `Failed to archive emails`;
+			throw err;
+		}
+	}
+
+	async function handleBatchTrash(emailIds: string[]) {
+		if (!selectedAccountId) return;
+
+		const promises = emailIds.map((id) =>
+			fetch(accountUrl(`/api/emails/${id}/trash`), { method: 'POST' })
+		);
+
+		try {
+			const results = await Promise.all(promises);
+			const failedCount = results.filter((r) => !r.ok).length;
+
+			if (failedCount > 0) {
+				throw new Error(`${failedCount} email(s) failed`);
+			}
+
+			await loadEmails();
+			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} moved to trash`;
+		} catch (err) {
+			error = `Failed to trash emails`;
+			throw err;
+		}
+	}
+
+	async function handleBatchLabel(emailIds: string[]) {
+		if (!selectedAccountId) return;
+
+		const promises = emailIds.map((id) =>
+			fetch(accountUrl(`/api/emails/${id}/label`), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ labelName: 'TODO' })
+			})
+		);
+
+		try {
+			const results = await Promise.all(promises);
+			const failedCount = results.filter((r) => !r.ok).length;
+
+			if (failedCount > 0) {
+				throw new Error(`${failedCount} email(s) failed`);
+			}
+
+			await loadEmails();
+			successMessage = `TODO label added to ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`;
+		} catch (err) {
+			error = `Failed to add labels`;
+			throw err;
+		}
+	}
+
 	async function handleUndo(actionId: string) {
 		if (!selectedAccountId) return;
 		try {
@@ -484,6 +581,10 @@
 						onArchive={handleArchive}
 						onTrash={handleTrash}
 						onLabel={handleLabel}
+						onBatchMarkRead={handleBatchMarkRead}
+						onBatchArchive={handleBatchArchive}
+						onBatchTrash={handleBatchTrash}
+						onBatchLabel={handleBatchLabel}
 					/>
 				</div>
 			</div>
