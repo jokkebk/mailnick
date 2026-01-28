@@ -89,6 +89,16 @@
 		return `${path}${connector}accountId=${encodeURIComponent(selectedAccountId)}`;
 	}
 
+	function selectBestAccount(
+		preferred: string | null,
+		stored: string | null,
+		availableAccounts: string[]
+	): string {
+		if (preferred && availableAccounts.includes(preferred)) return preferred;
+		if (stored && availableAccounts.includes(stored)) return stored;
+		return availableAccounts[0];
+	}
+
 	async function loadAccounts(preferredAccountId?: string | null) {
 		try {
 			const response = await fetch('/api/accounts');
@@ -105,16 +115,14 @@
 			}
 
 			const storedAccountId = localStorage.getItem('mailnick.accountId');
-			const nextAccount =
-				(preferredAccountId && accounts.includes(preferredAccountId) && preferredAccountId) ||
-				(storedAccountId && accounts.includes(storedAccountId) && storedAccountId) ||
-				accounts[0];
+			const nextAccount = selectBestAccount(preferredAccountId, storedAccountId, accounts);
 
 			selectedAccountId = nextAccount;
 			localStorage.setItem('mailnick.accountId', nextAccount);
 			authenticated = true;
 		} catch (e) {
 			console.error('Failed to load accounts:', e);
+			error = e instanceof Error ? e.message : 'Failed to load accounts';
 			accounts = [];
 			selectedAccountId = null;
 			authenticated = false;

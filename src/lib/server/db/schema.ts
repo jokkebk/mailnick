@@ -2,7 +2,9 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const emails = sqliteTable('emails', {
 	id: text('id').primaryKey(), // Gmail message ID
-	accountId: text('account_id').notNull(),
+	accountId: text('account_id')
+		.notNull()
+		.references(() => tokens.id),
 	threadId: text('thread_id').notNull(),
 	from: text('from').notNull(),
 	fromDomain: text('from_domain').notNull(), // Extracted for grouping
@@ -36,7 +38,9 @@ export const tokens = sqliteTable('tokens', {
 
 export const actionHistory = sqliteTable('action_history', {
 	id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-	accountId: text('account_id').notNull(),
+	accountId: text('account_id')
+		.notNull()
+		.references(() => tokens.id),
 	emailId: text('email_id')
 		.notNull()
 		.references(() => emails.id),

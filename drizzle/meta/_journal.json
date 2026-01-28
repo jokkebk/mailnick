@@ -15,6 +15,13 @@
       "when": 1769508175732,
       "tag": "0001_add_account_support",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1769580854668,
+      "tag": "0002_add_foreign_keys",
+      "breakpoints": true
     }
   ]
 }

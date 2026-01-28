@@ -8,11 +8,16 @@ export const DELETE: RequestHandler = async ({ params }) => {
 	const accountId = params.accountId;
 
 	try {
-		await db.delete(actionHistory).where(eq(actionHistory.accountId, accountId));
-		await db.delete(emails).where(eq(emails.accountId, accountId));
-		const deletedTokens = await db.delete(tokens).where(eq(tokens.id, accountId));
+		const result = await db.transaction(async (tx) => {
+			// Delete in order: action_history -> emails -> tokens
+			await tx.delete(actionHistory).where(eq(actionHistory.accountId, accountId));
+			await tx.delete(emails).where(eq(emails.accountId, accountId));
+			const deletedTokens = await tx.delete(tokens).where(eq(tokens.id, accountId));
 
-		if (deletedTokens.changes === 0) {
+			return deletedTokens;
+		});
+
+		if (result.changes === 0) {
 			return json({ error: 'Account not found' }, { status: 404 });
 		}
 
