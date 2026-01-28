@@ -195,8 +195,8 @@
 		}
 	}
 
-	async function setActiveAccount(accountId: string) {
-		if (accountId === selectedAccountId) {
+	async function setActiveAccount(accountId: string, previousAccountId: string | null) {
+		if (accountId === previousAccountId) {
 			return;
 		}
 		selectedAccountId = accountId;
@@ -509,10 +509,11 @@
 				<select
 					class="form-control form-control-sm mr-2"
 					style="width: auto; max-width: 250px;"
-					bind:value={selectedAccountId}
-					onchange={(event) =>
-						setActiveAccount((event.currentTarget as HTMLSelectElement).value)
-					}
+					value={selectedAccountId}
+					onchange={(event) => {
+						const previousId = selectedAccountId;
+						setActiveAccount((event.currentTarget as HTMLSelectElement).value, previousId);
+					}}
 				>
 					{#each accounts as account}
 						<option value={account}>{account}</option>
