@@ -1,20 +1,25 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, actionHistory } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getGmailClient } from '$lib/server/gmail/client';
 import { removeLabel } from '$lib/server/gmail/actions';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ params }) => {
+export const POST: RequestHandler = async ({ params, url }) => {
 	const { actionId } = params;
+	const accountId = url.searchParams.get('accountId');
 
 	try {
+		if (!accountId) {
+			return json({ error: 'Account ID is required' }, { status: 400 });
+		}
+
 		// Fetch action from actionHistory
 		const action = await db
 			.select()
 			.from(actionHistory)
-			.where(eq(actionHistory.id, actionId))
+			.where(and(eq(actionHistory.id, actionId), eq(actionHistory.accountId, accountId)))
 			.get();
 
 		if (!action) {
@@ -33,7 +38,7 @@ export const POST: RequestHandler = async ({ params }) => {
 		// Parse originalState JSON
 		const originalState = JSON.parse(action.originalState);
 
-		const gmail = await getGmailClient();
+		const gmail = await getGmailClient(accountId);
 
 		// Reverse Gmail API call based on action type
 		switch (action.actionType) {
@@ -50,7 +55,7 @@ export const POST: RequestHandler = async ({ params }) => {
 					await db
 						.update(emails)
 						.set({ isUnread: true })
-						.where(eq(emails.id, action.emailId));
+						.where(and(eq(emails.id, action.emailId), eq(emails.accountId, accountId)));
 				}
 				break;
 
@@ -70,7 +75,7 @@ export const POST: RequestHandler = async ({ params }) => {
 				await db
 					.update(emails)
 					.set({ isUnread: originalState.isUnread })
-					.where(eq(emails.id, action.emailId));
+					.where(and(eq(emails.id, action.emailId), eq(emails.accountId, accountId)));
 				break;
 
 			case 'trash':
@@ -84,13 +89,13 @@ export const POST: RequestHandler = async ({ params }) => {
 			case 'label':
 				// Remove the added label
 				if (originalState.addedLabelId) {
-					await removeLabel(action.emailId, originalState.addedLabelId);
+					await removeLabel(accountId, action.emailId, originalState.addedLabelId);
 
 					// Update local DB
 					const email = await db
 						.select()
 						.from(emails)
-						.where(eq(emails.id, action.emailId))
+						.where(and(eq(emails.id, action.emailId), eq(emails.accountId, accountId)))
 						.get();
 					if (email && email.labelIds) {
 						const currentLabelIds = JSON.parse(email.labelIds);
@@ -100,7 +105,7 @@ export const POST: RequestHandler = async ({ params }) => {
 						await db
 							.update(emails)
 							.set({ labelIds: JSON.stringify(updatedLabelIds) })
-							.where(eq(emails.id, action.emailId));
+							.where(and(eq(emails.id, action.emailId), eq(emails.accountId, accountId)));
 					}
 				}
 				break;
@@ -110,7 +115,10 @@ export const POST: RequestHandler = async ({ params }) => {
 		}
 
 		// Mark action as undone
-		await db.update(actionHistory).set({ undone: true }).where(eq(actionHistory.id, actionId));
+		await db
+			.update(actionHistory)
+			.set({ undone: true })
+			.where(and(eq(actionHistory.id, actionId), eq(actionHistory.accountId, accountId)));
 
 		return json({ success: true });
 	} catch (error) {

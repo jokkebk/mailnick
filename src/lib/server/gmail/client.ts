@@ -4,12 +4,12 @@ import { db } from '../db';
 import { tokens } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
-export async function getGmailClient() {
+export async function getGmailClient(accountId: string) {
 	// Get stored tokens
-	const storedTokens = await db.select().from(tokens).where(eq(tokens.id, 'default')).get();
+	const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 
 	if (!storedTokens) {
-		throw new Error('No stored tokens found. Please authenticate first.');
+		throw new Error('No stored tokens found for this account. Please authenticate first.');
 	}
 
 	const oauth2Client = getOAuth2Client();
@@ -29,7 +29,7 @@ export async function getGmailClient() {
 					accessToken: credentials.access_token,
 					expiresAt: new Date(credentials.expiry_date)
 				})
-				.where(eq(tokens.id, 'default'));
+				.where(eq(tokens.id, accountId));
 			oauth2Client.setCredentials(credentials);
 		}
 	}

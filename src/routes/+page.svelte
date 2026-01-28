@@ -31,6 +31,8 @@
 		action: ActionHistory;
 	}
 
+	let accounts = $state<string[]>([]);
+	let selectedAccountId = $state<string | null>(null);
 	let authenticated = $state(false);
 	let emails = $state<Email[]>([]);
 	let emailsWithActions = $state<EmailWithAction[]>([]);
@@ -79,36 +81,97 @@
 		});
 	});
 
+	function accountUrl(path: string): string {
+		if (!selectedAccountId) {
+			return path;
+		}
+		const connector = path.includes('?') ? '&' : '?';
+		return `${path}${connector}accountId=${encodeURIComponent(selectedAccountId)}`;
+	}
+
+	function selectBestAccount(
+		preferred: string | null,
+		stored: string | null,
+		availableAccounts: string[]
+	): string {
+		if (preferred && availableAccounts.includes(preferred)) return preferred;
+		if (stored && availableAccounts.includes(stored)) return stored;
+		return availableAccounts[0];
+	}
+
+	async function loadAccounts(preferredAccountId?: string | null) {
+		try {
+			const response = await fetch('/api/accounts');
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to load accounts');
+			}
+
+			accounts = data.accounts || [];
+			if (accounts.length === 0) {
+				selectedAccountId = null;
+				authenticated = false;
+				return;
+			}
+
+			const storedAccountId = localStorage.getItem('mailnick.accountId');
+			const nextAccount = selectBestAccount(preferredAccountId, storedAccountId, accounts);
+
+			selectedAccountId = nextAccount;
+			localStorage.setItem('mailnick.accountId', nextAccount);
+			authenticated = true;
+		} catch (e) {
+			console.error('Failed to load accounts:', e);
+			error = e instanceof Error ? e.message : 'Failed to load accounts';
+			accounts = [];
+			selectedAccountId = null;
+			authenticated = false;
+		}
+	}
+
 	onMount(async () => {
 		// Check URL params for auth status
 		const params = new URLSearchParams(window.location.search);
 		const justAuthenticated = params.get('success') === 'authenticated';
+		const accountParam = params.get('accountId');
 
 		if (justAuthenticated) {
 			successMessage = 'Successfully authenticated with Gmail! Syncing emails...';
-			authenticated = true;
+		} else if (params.get('error')) {
+			error = `Authentication error: ${params.get('error')}`;
+		}
+
+		await loadAccounts(accountParam);
+
+		if (justAuthenticated && selectedAccountId) {
 			// Clean up URL
 			window.history.replaceState({}, '', '/');
 			// Automatically sync emails after authentication
 			await syncEmails();
-		} else if (params.get('error')) {
-			error = `Authentication error: ${params.get('error')}`;
-		} else {
-			// Try to fetch emails to check if authenticated
+		} else if (selectedAccountId) {
 			await loadEmails();
 		}
 	});
 
 	async function loadEmails() {
+		if (!selectedAccountId) {
+			emails = [];
+			emailsWithActions = [];
+			authenticated = false;
+			return;
+		}
+
 		loading = true;
 		error = null;
 		try {
 			// Fetch unread emails
-			const unreadResponse = await fetch(`/api/emails?unreadOnly=true&days=${syncDays}`);
+			const unreadResponse = await fetch(
+				accountUrl(`/api/emails?unreadOnly=true&days=${syncDays}`)
+			);
 			const unreadData = await unreadResponse.json();
 
 			// Fetch emails with actions
-			const actionsResponse = await fetch('/api/emails/with-actions');
+			const actionsResponse = await fetch(accountUrl('/api/emails/with-actions'));
 			const actionsData = await actionsResponse.json();
 
 			if (unreadResponse.ok && actionsResponse.ok) {
@@ -116,17 +179,23 @@
 				emailsWithActions = actionsData.emailsWithActions;
 				authenticated = true;
 			} else {
-				authenticated = false;
+				error = unreadData.error || actionsData.error || 'Failed to load emails';
+				authenticated = Boolean(selectedAccountId);
 			}
 		} catch (e) {
 			console.error('Failed to load emails:', e);
-			authenticated = false;
+			authenticated = Boolean(selectedAccountId);
 		} finally {
 			loading = false;
 		}
 	}
 
 	async function syncEmails(days?: number) {
+		if (!selectedAccountId) {
+			error = 'Select an account before syncing.';
+			return;
+		}
+
 		const daysToSync = days || syncDays;
 		syncing = true;
 		error = null;
@@ -136,7 +205,7 @@
 			const response = await fetch('/api/emails/sync', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ days: daysToSync })
+				body: JSON.stringify({ days: daysToSync, accountId: selectedAccountId })
 			});
 			const data = await response.json();
 
@@ -152,6 +221,50 @@
 			console.error('Sync error:', e);
 		} finally {
 			syncing = false;
+		}
+	}
+
+	async function setActiveAccount(accountId: string) {
+		if (accountId === selectedAccountId) {
+			return;
+		}
+		selectedAccountId = accountId;
+		localStorage.setItem('mailnick.accountId', accountId);
+		emails = [];
+		emailsWithActions = [];
+		successMessage = null;
+		showSyncOptions = false;
+		await loadEmails();
+	}
+
+	async function handleDeleteAccount() {
+		if (!selectedAccountId) {
+			return;
+		}
+		const confirmed = window.confirm(`Remove account ${selectedAccountId}? This deletes stored data.`);
+		if (!confirmed) {
+			return;
+		}
+		try {
+			const response = await fetch(
+				`/api/accounts/${encodeURIComponent(selectedAccountId)}`,
+				{ method: 'DELETE' }
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to delete account');
+			}
+			successMessage = `Removed account ${selectedAccountId}`;
+			await loadAccounts();
+			if (selectedAccountId) {
+				await loadEmails();
+			} else {
+				emails = [];
+				emailsWithActions = [];
+			}
+		} catch (e) {
+			console.error('Delete account error:', e);
+			error = 'Failed to delete account';
 		}
 	}
 
@@ -193,6 +306,7 @@
 
 	// Action handlers
 	async function handleMarkRead(emailId: string) {
+		if (!selectedAccountId) return;
 		const email = emails.find((e) => e.id === emailId);
 		if (!email || !email.isUnread) return;
 
@@ -200,7 +314,9 @@
 		emails = [...emails];
 
 		try {
-			const response = await fetch(`/api/emails/${emailId}/mark-read`, { method: 'POST' });
+			const response = await fetch(accountUrl(`/api/emails/${emailId}/mark-read`), {
+				method: 'POST'
+			});
 			if (!response.ok) throw new Error('Failed');
 
 			// Reload both unread and action lists
@@ -214,6 +330,7 @@
 	}
 
 	async function handleArchive(emailId: string) {
+		if (!selectedAccountId) return;
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
@@ -221,7 +338,9 @@
 		emails = [...emails];
 
 		try {
-			const response = await fetch(`/api/emails/${emailId}/archive`, { method: 'POST' });
+			const response = await fetch(accountUrl(`/api/emails/${emailId}/archive`), {
+				method: 'POST'
+			});
 			if (!response.ok) throw new Error('Failed');
 
 			await loadEmails();
@@ -234,6 +353,7 @@
 	}
 
 	async function handleTrash(emailId: string) {
+		if (!selectedAccountId) return;
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
@@ -241,7 +361,7 @@
 		emails = [...emails];
 
 		try {
-			const response = await fetch(`/api/emails/${emailId}/trash`, { method: 'POST' });
+			const response = await fetch(accountUrl(`/api/emails/${emailId}/trash`), { method: 'POST' });
 			if (!response.ok) throw new Error('Failed');
 
 			await loadEmails();
@@ -254,6 +374,7 @@
 	}
 
 	async function handleLabel(emailId: string) {
+		if (!selectedAccountId) return;
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
@@ -261,7 +382,7 @@
 		emails = [...emails];
 
 		try {
-			const response = await fetch(`/api/emails/${emailId}/label`, {
+			const response = await fetch(accountUrl(`/api/emails/${emailId}/label`), {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ labelName: 'TODO' })
@@ -278,8 +399,11 @@
 	}
 
 	async function handleUndo(actionId: string) {
+		if (!selectedAccountId) return;
 		try {
-			const response = await fetch(`/api/actions/${actionId}/undo`, { method: 'POST' });
+			const response = await fetch(accountUrl(`/api/actions/${actionId}/undo`), {
+				method: 'POST'
+			});
 			if (!response.ok) throw new Error('Failed to undo');
 
 			await loadEmails();
@@ -304,29 +428,48 @@
 	<nav class="navbar navbar-dark bg-dark mb-4">
 		<div class="container-fluid">
 			<span class="navbar-brand mb-0 h1">📧 MailNick</span>
-			{#if authenticated}
-				<div class="btn-group">
-					<button class="btn btn-primary" onclick={() => syncEmails()} disabled={syncing}>
-						{syncing ? 'Syncing...' : `Sync (${syncDays} days)`}
-					</button>
-					<button
-						class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-						onclick={() => (showSyncOptions = !showSyncOptions)}
-						disabled={syncing}
+			<div class="d-flex align-items-center">
+				{#if accounts.length > 0}
+					<select
+						class="custom-select custom-select-sm mr-2"
+						bind:value={selectedAccountId}
+						onchange={(event) =>
+							setActiveAccount((event.currentTarget as HTMLSelectElement).value)
+						}
 					>
-						<span class="sr-only">Toggle Dropdown</span>
+						{#each accounts as account}
+							<option value={account}>{account}</option>
+						{/each}
+					</select>
+					<button class="btn btn-outline-danger btn-sm mr-2" onclick={handleDeleteAccount}>
+						Delete
 					</button>
-					{#if showSyncOptions}
-						<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
-							<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
-						</div>
-					{/if}
-				</div>
-			{/if}
+				{/if}
+				<a class="btn btn-outline-light btn-sm mr-3" href="/auth">Add account</a>
+				{#if authenticated}
+					<div class="btn-group">
+						<button class="btn btn-primary" onclick={() => syncEmails()} disabled={syncing}>
+							{syncing ? 'Syncing...' : `Sync (${syncDays} days)`}
+						</button>
+						<button
+							class="btn btn-primary dropdown-toggle dropdown-toggle-split"
+							onclick={() => (showSyncOptions = !showSyncOptions)}
+							disabled={syncing}
+						>
+							<span class="sr-only">Toggle Dropdown</span>
+						</button>
+						{#if showSyncOptions}
+							<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
+								<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
+								<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
+								<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
+								<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
+								<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</nav>
 

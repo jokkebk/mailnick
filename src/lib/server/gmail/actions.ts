@@ -1,11 +1,10 @@
 import { getGmailClient } from './client';
-import type { gmail_v1 } from 'googleapis';
 
 /**
  * Mark an email as read by removing the UNREAD label
  */
-export async function markAsRead(messageId: string): Promise<void> {
-	const gmail = await getGmailClient();
+export async function markAsRead(accountId: string, messageId: string): Promise<void> {
+	const gmail = await getGmailClient(accountId);
 	await gmail.users.messages.modify({
 		userId: 'me',
 		id: messageId,
@@ -18,8 +17,8 @@ export async function markAsRead(messageId: string): Promise<void> {
 /**
  * Archive an email by removing the INBOX label
  */
-export async function archiveEmail(messageId: string): Promise<void> {
-	const gmail = await getGmailClient();
+export async function archiveEmail(accountId: string, messageId: string): Promise<void> {
+	const gmail = await getGmailClient(accountId);
 	await gmail.users.messages.modify({
 		userId: 'me',
 		id: messageId,
@@ -32,8 +31,8 @@ export async function archiveEmail(messageId: string): Promise<void> {
 /**
  * Move email to trash by adding TRASH label
  */
-export async function trashEmail(messageId: string): Promise<void> {
-	const gmail = await getGmailClient();
+export async function trashEmail(accountId: string, messageId: string): Promise<void> {
+	const gmail = await getGmailClient(accountId);
 	await gmail.users.messages.trash({
 		userId: 'me',
 		id: messageId
@@ -43,8 +42,8 @@ export async function trashEmail(messageId: string): Promise<void> {
 /**
  * Add a label to an email
  */
-export async function addLabel(messageId: string, labelId: string): Promise<void> {
-	const gmail = await getGmailClient();
+export async function addLabel(accountId: string, messageId: string, labelId: string): Promise<void> {
+	const gmail = await getGmailClient(accountId);
 	await gmail.users.messages.modify({
 		userId: 'me',
 		id: messageId,
@@ -57,8 +56,8 @@ export async function addLabel(messageId: string, labelId: string): Promise<void
 /**
  * Remove a label from an email
  */
-export async function removeLabel(messageId: string, labelId: string): Promise<void> {
-	const gmail = await getGmailClient();
+export async function removeLabel(accountId: string, messageId: string, labelId: string): Promise<void> {
+	const gmail = await getGmailClient(accountId);
 	await gmail.users.messages.modify({
 		userId: 'me',
 		id: messageId,
@@ -71,8 +70,8 @@ export async function removeLabel(messageId: string, labelId: string): Promise<v
 /**
  * Ensure a label exists, create if it doesn't, and return the label ID
  */
-export async function ensureLabelExists(labelName: string): Promise<string> {
-	const gmail = await getGmailClient();
+export async function ensureLabelExists(accountId: string, labelName: string): Promise<string> {
+	const gmail = await getGmailClient(accountId);
 
 	// List all labels
 	const { data } = await gmail.users.labels.list({

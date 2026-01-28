@@ -1,16 +1,25 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, actionHistory } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { trashEmail } from '$lib/server/gmail/actions';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ params }) => {
+export const POST: RequestHandler = async ({ params, url }) => {
 	const { id } = params;
+	const accountId = url.searchParams.get('accountId');
 
 	try {
+		if (!accountId) {
+			return json({ error: 'Account ID is required' }, { status: 400 });
+		}
+
 		// Get email from DB to capture original state
-		const email = await db.select().from(emails).where(eq(emails.id, id)).get();
+		const email = await db
+			.select()
+			.from(emails)
+			.where(and(eq(emails.id, id), eq(emails.accountId, accountId)))
+			.get();
 
 		if (!email) {
 			return json({ error: 'Email not found' }, { status: 404 });
@@ -22,7 +31,7 @@ export const POST: RequestHandler = async ({ params }) => {
 		};
 
 		// Call Gmail API to move to trash
-		await trashEmail(id);
+		await trashEmail(accountId, id);
 
 		// Insert action record into actionHistory with 24hr expiry
 		const expiresAt = new Date();
@@ -31,6 +40,7 @@ export const POST: RequestHandler = async ({ params }) => {
 		const actionId = crypto.randomUUID();
 		await db.insert(actionHistory).values({
 			id: actionId,
+			accountId,
 			emailId: id,
 			actionType: 'trash',
 			originalState: JSON.stringify(originalState),

@@ -29,3 +29,22 @@ export async function getTokensFromCode(code: string) {
 	const { tokens } = await oauth2Client.getToken(code);
 	return tokens;
 }
+
+export async function getAccountEmail(tokensData: {
+	access_token?: string | null;
+	refresh_token?: string | null;
+	expiry_date?: number | null;
+}) {
+	const oauth2Client = getOAuth2Client();
+	oauth2Client.setCredentials({
+		access_token: tokensData.access_token,
+		refresh_token: tokensData.refresh_token
+	});
+
+	const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+	const profile = await gmail.users.getProfile({ userId: 'me' });
+	if (!profile.data.emailAddress) {
+		throw new Error('Failed to resolve account email.');
+	}
+	return profile.data.emailAddress;
+}
