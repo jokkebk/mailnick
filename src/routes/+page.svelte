@@ -130,6 +130,12 @@
 	}
 
 	onMount(async () => {
+		// Load syncDays from localStorage
+		const storedDays = localStorage.getItem('mailnick.syncDays');
+		if (storedDays) {
+			syncDays = parseInt(storedDays, 10);
+		}
+
 		// Check URL params for auth status
 		const params = new URLSearchParams(window.location.search);
 		const justAuthenticated = params.get('success') === 'authenticated';
@@ -211,6 +217,7 @@
 
 			if (response.ok) {
 				syncDays = daysToSync; // Update current sync period
+				localStorage.setItem('mailnick.syncDays', daysToSync.toString());
 				successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
 				await loadEmails();
 			} else {
@@ -424,56 +431,56 @@
 	}
 </script>
 
-<div class="container-fluid">
-	<nav class="navbar navbar-dark bg-dark mb-4">
-		<div class="container-fluid">
-			<span class="navbar-brand mb-0 h1">📧 MailNick</span>
-			<div class="d-flex align-items-center">
-				{#if accounts.length > 0}
-					<select
-						class="custom-select custom-select-sm mr-2"
-						bind:value={selectedAccountId}
-						onchange={(event) =>
-							setActiveAccount((event.currentTarget as HTMLSelectElement).value)
-						}
-					>
-						{#each accounts as account}
-							<option value={account}>{account}</option>
-						{/each}
-					</select>
-					<button class="btn btn-outline-danger btn-sm mr-2" onclick={handleDeleteAccount}>
-						Delete
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+	<div class="container-fluid">
+		<span class="navbar-brand mb-0 h1">📧 MailNick</span>
+		<div class="ml-auto d-flex align-items-center" style="gap: 0.5rem;">
+			{#if accounts.length > 0}
+				<select
+					class="form-control form-control-sm mr-2"
+					style="width: auto; max-width: 250px;"
+					bind:value={selectedAccountId}
+					onchange={(event) =>
+						setActiveAccount((event.currentTarget as HTMLSelectElement).value)
+					}
+				>
+					{#each accounts as account}
+						<option value={account}>{account}</option>
+					{/each}
+				</select>
+				<button class="btn btn-outline-danger btn-sm mr-2" onclick={handleDeleteAccount}>
+					Delete
+				</button>
+			{/if}
+			<a class="btn btn-outline-light btn-sm mr-2" href="/auth">Add account</a>
+			{#if authenticated}
+				<div class="btn-group btn-group-sm">
+					<button class="btn btn-primary btn-sm" onclick={() => syncEmails()} disabled={syncing}>
+						{syncing ? 'Syncing...' : `Sync (${syncDays}d)`}
 					</button>
-				{/if}
-				<a class="btn btn-outline-light btn-sm mr-3" href="/auth">Add account</a>
-				{#if authenticated}
-					<div class="btn-group">
-						<button class="btn btn-primary" onclick={() => syncEmails()} disabled={syncing}>
-							{syncing ? 'Syncing...' : `Sync (${syncDays} days)`}
-						</button>
-						<button
-							class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-							onclick={() => (showSyncOptions = !showSyncOptions)}
-							disabled={syncing}
-						>
-							<span class="sr-only">Toggle Dropdown</span>
-						</button>
-						{#if showSyncOptions}
-							<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
-								<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
-								<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
-								<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
-								<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
-								<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
+					<button
+						class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+						onclick={() => (showSyncOptions = !showSyncOptions)}
+						disabled={syncing}
+					>
+						<span class="sr-only">Toggle Dropdown</span>
+					</button>
+					{#if showSyncOptions}
+						<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
+							<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
+							<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
-	</nav>
+	</div>
+</nav>
 
-	<div class="container">
+<div class="container">
 		{#if error}
 			<div class="alert alert-danger alert-dismissible fade show" role="alert">
 				{error}
@@ -724,4 +731,3 @@
 			</div>
 		{/if}
 	</div>
-</div>
