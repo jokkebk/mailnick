@@ -47,6 +47,23 @@
 	let filterTo = $state('');
 	let filterSubject = $state('');
 
+	// Badge filter tracking
+	let activeFilterBadge = $state<{type: 'from' | 'to' | 'subject', value: string} | null>(null);
+
+	// Clear badge when filters change manually (not via badge click)
+	$effect(() => {
+		if (activeFilterBadge) {
+			const badgeMatchesFilter =
+				(activeFilterBadge.type === 'from' && filterFrom === activeFilterBadge.value) ||
+				(activeFilterBadge.type === 'to' && filterTo === activeFilterBadge.value) ||
+				(activeFilterBadge.type === 'subject' && filterSubject === activeFilterBadge.value);
+
+			if (!badgeMatchesFilter) {
+				activeFilterBadge = null;
+			}
+		}
+	});
+
 	// Selection state
 	let selectedIds = $state<Set<string>>(new Set());
 	let lastClickedIndex = $state<number | null>(null);
@@ -80,6 +97,60 @@
 				(!filterSubject || email.subject?.toLowerCase().includes(filterSubject.toLowerCase()))
 			);
 		});
+	});
+
+	// Badge computations
+	const fromBadges = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const email of emails) {
+			counts.set(email.from, (counts.get(email.from) || 0) + 1);
+		}
+		return Array.from(counts.entries())
+			.filter(([_, count]) => count >= 3)
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => b.count - a.count);
+	});
+
+	const toBadges = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const email of emails) {
+			if (email.to) {
+				// Handle comma-separated recipients
+				const recipients = email.to.split(',').map(r => r.trim());
+				for (const recipient of recipients) {
+					counts.set(recipient, (counts.get(recipient) || 0) + 1);
+				}
+			}
+		}
+		return Array.from(counts.entries())
+			.filter(([_, count]) => count >= 3)
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => b.count - a.count);
+	});
+
+	const subjectBadges = $derived.by(() => {
+		const counts = new Map<string, number>();
+		const stopwords = new Set(['about', 'could', 'would', 'should', 'please', 'thank', 'thanks', 'email', 'message', 'regarding', 'concerning']);
+
+		for (const email of emails) {
+			if (email.subject) {
+				// Tokenize: split by spaces, punctuation
+				const words = email.subject
+					.split(/[\s\-_\[\](){}'",.;:!?]+/)
+					.filter(w => w.length >= 5 && !stopwords.has(w.toLowerCase()));
+
+				for (const word of words) {
+					const lower = word.toLowerCase();
+					counts.set(lower, (counts.get(lower) || 0) + 1);
+				}
+			}
+		}
+
+		return Array.from(counts.entries())
+			.filter(([_, count]) => count >= 3)
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => b.count - a.count)
+			.slice(0, 10); // Limit to top 10
 	});
 
 	function formatDate(dateString: string): string {
@@ -193,6 +264,38 @@
 			batchProcessing = false;
 		}
 	}
+
+	function handleBadgeClick(type: 'from' | 'to' | 'subject', value: string) {
+		// Toggle: if same badge clicked, clear filter
+		if (activeFilterBadge?.type === type && activeFilterBadge?.value === value) {
+			clearAllFilters();
+			return;
+		}
+
+		// Set appropriate filter and clear others
+		if (type === 'from') {
+			filterFrom = value;
+			filterTo = '';
+			filterSubject = '';
+		} else if (type === 'to') {
+			filterFrom = '';
+			filterTo = value;
+			filterSubject = '';
+		} else {
+			filterFrom = '';
+			filterTo = '';
+			filterSubject = value;
+		}
+
+		activeFilterBadge = { type, value };
+	}
+
+	function clearAllFilters() {
+		filterFrom = '';
+		filterTo = '';
+		filterSubject = '';
+		activeFilterBadge = null;
+	}
 </script>
 
 {#if emails.length === 0}
@@ -246,6 +349,66 @@
 			</div>
 		</div>
 	{/if}
+
+	<!-- Filter badges bar -->
+	{#if fromBadges.length > 0 || toBadges.length > 0 || subjectBadges.length > 0}
+		<div class="filter-badges-bar">
+			{#if fromBadges.length > 0}
+				<div class="badge-group">
+					<span class="badge-label">From:</span>
+					{#each fromBadges as badge}
+						<button
+							class="badge badge-pill badge-clickable"
+							class:badge-primary={activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value}
+							class:badge-secondary={!(activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value)}
+							onclick={() => handleBadgeClick('from', badge.value)}
+						>
+							{badge.value} ({badge.count})
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if toBadges.length > 0}
+				<div class="badge-group">
+					<span class="badge-label">To:</span>
+					{#each toBadges as badge}
+						<button
+							class="badge badge-pill badge-clickable"
+							class:badge-primary={activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value}
+							class:badge-secondary={!(activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value)}
+							onclick={() => handleBadgeClick('to', badge.value)}
+						>
+							{badge.value} ({badge.count})
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if subjectBadges.length > 0}
+				<div class="badge-group">
+					<span class="badge-label">Keywords:</span>
+					{#each subjectBadges as badge}
+						<button
+							class="badge badge-pill badge-clickable"
+							class:badge-primary={activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value}
+							class:badge-secondary={!(activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value)}
+							onclick={() => handleBadgeClick('subject', badge.value)}
+						>
+							{badge.value} ({badge.count})
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if activeFilterBadge}
+				<button class="btn btn-sm btn-outline-secondary" onclick={clearAllFilters}>
+					Clear filter
+				</button>
+			{/if}
+		</div>
+	{/if}
+
 	<div class="table-responsive">
 		<table class="table table-sm email-table">
 			<thead class="thead-dark">
@@ -456,5 +619,45 @@
 
 	.font-weight-bold {
 		font-weight: 600;
+	}
+
+	.filter-badges-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1rem;
+		padding: 0.75rem 1rem;
+		background-color: #f8f9fa;
+		border: 1px solid #dee2e6;
+		border-radius: 0.25rem;
+		margin-bottom: 1rem;
+	}
+
+	.badge-group {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.badge-label {
+		font-weight: 600;
+		color: #495057;
+		font-size: 0.875rem;
+	}
+
+	.badge-clickable {
+		cursor: pointer;
+		border: none;
+		transition: all 0.2s ease;
+	}
+
+	.badge-clickable:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+	}
+
+	.badge-clickable:active {
+		transform: translateY(0);
 	}
 </style>
