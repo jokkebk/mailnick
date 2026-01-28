@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { emails, tokens } from '$lib/server/db/schema';
-import { desc, eq, gte, and } from 'drizzle-orm';
+import { emails, tokens, actionHistory } from '$lib/server/db/schema';
+import { desc, eq, gte, and, notInArray, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -31,6 +31,17 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		if (unreadOnly) {
 			conditions.push(eq(emails.isUnread, true));
+
+			// Exclude emails with active (non-undone) actions (any action makes it "handled")
+			const activeActions = await db
+				.select({ emailId: actionHistory.emailId })
+				.from(actionHistory)
+				.where(and(eq(actionHistory.accountId, accountId), eq(actionHistory.undone, false)));
+
+			const excludedEmailIds = activeActions.map((a) => a.emailId);
+			if (excludedEmailIds.length > 0) {
+				conditions.push(notInArray(emails.id, excludedEmailIds));
+			}
 		}
 
 		if (category) {

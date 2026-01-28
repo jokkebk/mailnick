@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import EmailTable from '$lib/components/EmailTable.svelte';
+	import ActionsTable from '$lib/components/ActionsTable.svelte';
 
 	interface Email {
 		id: string;
@@ -133,7 +134,7 @@
 		loading = true;
 		error = null;
 		try {
-			// Fetch unread emails
+			// Fetch unhandled emails (unread emails without any actions)
 			const unreadResponse = await fetch(
 				accountUrl(`/api/emails?unreadOnly=true&days=${syncDays}`)
 			);
@@ -261,8 +262,8 @@
 		const email = emails.find((e) => e.id === emailId);
 		if (!email || !email.isUnread) return;
 
-		email.processing = true;
-		emails = [...emails];
+		// Optimistically remove from list
+		emails = emails.filter((e) => e.id !== emailId);
 
 		try {
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/mark-read`), {
@@ -270,13 +271,13 @@
 			});
 			if (!response.ok) throw new Error('Failed');
 
-			// Reload both unread and action lists
+			// Reload both unhandled and action lists
 			await loadEmails();
 			successMessage = 'Email marked as read';
 		} catch (err) {
 			error = 'Failed to mark as read';
-			email.processing = false;
-			emails = [...emails];
+			// Reload to restore state on error
+			await loadEmails();
 		}
 	}
 
@@ -285,8 +286,8 @@
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
-		email.processing = true;
-		emails = [...emails];
+		// Optimistically remove from list
+		emails = emails.filter((e) => e.id !== emailId);
 
 		try {
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/archive`), {
@@ -298,8 +299,7 @@
 			successMessage = 'Email archived';
 		} catch (err) {
 			error = 'Failed to archive email';
-			email.processing = false;
-			emails = [...emails];
+			await loadEmails();
 		}
 	}
 
@@ -308,8 +308,8 @@
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
-		email.processing = true;
-		emails = [...emails];
+		// Optimistically remove from list
+		emails = emails.filter((e) => e.id !== emailId);
 
 		try {
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/trash`), { method: 'POST' });
@@ -319,8 +319,7 @@
 			successMessage = 'Email moved to trash';
 		} catch (err) {
 			error = 'Failed to trash email';
-			email.processing = false;
-			emails = [...emails];
+			await loadEmails();
 		}
 	}
 
@@ -329,8 +328,8 @@
 		const email = emails.find((e) => e.id === emailId);
 		if (!email) return;
 
-		email.processing = true;
-		emails = [...emails];
+		// Optimistically remove from list (label action marks as "handled")
+		emails = emails.filter((e) => e.id !== emailId);
 
 		try {
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/label`), {
@@ -344,14 +343,16 @@
 			successMessage = 'TODO label added';
 		} catch (err) {
 			error = 'Failed to add label';
-			email.processing = false;
-			emails = [...emails];
+			await loadEmails();
 		}
 	}
 
 	// Batch action handlers
 	async function handleBatchMarkRead(emailIds: string[]) {
 		if (!selectedAccountId) return;
+
+		// Optimistically remove from list
+		emails = emails.filter((e) => !emailIds.includes(e.id));
 
 		const promises = emailIds.map((id) =>
 			fetch(accountUrl(`/api/emails/${id}/mark-read`), { method: 'POST' })
@@ -369,12 +370,16 @@
 			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} marked as read`;
 		} catch (err) {
 			error = `Failed to mark emails as read`;
+			await loadEmails();
 			throw err;
 		}
 	}
 
 	async function handleBatchArchive(emailIds: string[]) {
 		if (!selectedAccountId) return;
+
+		// Optimistically remove from list
+		emails = emails.filter((e) => !emailIds.includes(e.id));
 
 		const promises = emailIds.map((id) =>
 			fetch(accountUrl(`/api/emails/${id}/archive`), { method: 'POST' })
@@ -392,12 +397,16 @@
 			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} archived`;
 		} catch (err) {
 			error = `Failed to archive emails`;
+			await loadEmails();
 			throw err;
 		}
 	}
 
 	async function handleBatchTrash(emailIds: string[]) {
 		if (!selectedAccountId) return;
+
+		// Optimistically remove from list
+		emails = emails.filter((e) => !emailIds.includes(e.id));
 
 		const promises = emailIds.map((id) =>
 			fetch(accountUrl(`/api/emails/${id}/trash`), { method: 'POST' })
@@ -415,12 +424,16 @@
 			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} moved to trash`;
 		} catch (err) {
 			error = `Failed to trash emails`;
+			await loadEmails();
 			throw err;
 		}
 	}
 
 	async function handleBatchLabel(emailIds: string[]) {
 		if (!selectedAccountId) return;
+
+		// Optimistically remove from list (label action marks as "handled")
+		emails = emails.filter((e) => !emailIds.includes(e.id));
 
 		const promises = emailIds.map((id) =>
 			fetch(accountUrl(`/api/emails/${id}/label`), {
@@ -442,6 +455,7 @@
 			successMessage = `TODO label added to ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`;
 		} catch (err) {
 			error = `Failed to add labels`;
+			await loadEmails();
 			throw err;
 		}
 	}
@@ -461,15 +475,30 @@
 		}
 	}
 
-	function getActionLabel(actionType: string): string {
-		switch (actionType) {
-			case 'mark_read': return 'Marked as read';
-			case 'archive': return 'Archived';
-			case 'trash': return 'Trashed';
-			case 'label': return 'Labeled';
-			default: return actionType;
+	async function handleBatchUndo(actionIds: string[]) {
+		if (!selectedAccountId) return;
+
+		const promises = actionIds.map((id) =>
+			fetch(accountUrl(`/api/actions/${id}/undo`), { method: 'POST' })
+		);
+
+		try {
+			const results = await Promise.all(promises);
+			const failedCount = results.filter((r) => !r.ok).length;
+
+			if (failedCount > 0) {
+				throw new Error(`${failedCount} action(s) failed`);
+			}
+
+			await loadEmails();
+			successMessage = `${actionIds.length} action${actionIds.length !== 1 ? 's' : ''} undone`;
+		} catch (err) {
+			error = `Failed to undo actions`;
+			await loadEmails();
+			throw err;
 		}
 	}
+
 </script>
 
 <nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
@@ -562,12 +591,12 @@
 				</div>
 			</div>
 		{:else}
-			<!-- Unread Emails Section -->
+			<!-- Unhandled Emails Section -->
 			<div class="row mb-5">
 				<div class="col-12">
 					<div class="d-flex justify-content-between align-items-center mb-3">
 						<h3>
-							Unread Emails ({emails.length})
+							Unhandled Emails ({emails.length})
 							<small class="text-muted" style="font-size: 0.6em;">
 								from last {syncDays} days
 							</small>
@@ -601,50 +630,11 @@
 						</h3>
 					</div>
 
-					{#if emailsWithActions.length === 0}
-						<div class="alert alert-info">
-							No recent actions. Mark emails as read, archive, or take other actions to see them here.
-						</div>
-					{:else}
-						<div class="table-responsive">
-							<table class="table table-hover table-sm">
-								<thead class="thead-light">
-									<tr>
-										<th style="width: 25%;">From</th>
-										<th style="width: 20%;">To</th>
-										<th style="width: 25%;">Subject</th>
-										<th style="width: 15%;">Action</th>
-										<th style="width: 10%;">When</th>
-										<th style="width: 5%;">Undo</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each emailsWithActions as { email, action } (action.id)}
-										<tr>
-											<td>{email.from}</td>
-											<td>{email.to || '-'}</td>
-											<td>{email.subject || '(No subject)'}</td>
-											<td>
-												<span class="badge badge-secondary">
-													{getActionLabel(action.actionType)}
-												</span>
-											</td>
-											<td>{formatDate(action.timestamp)}</td>
-											<td>
-												<button
-													class="btn btn-sm btn-outline-primary"
-													onclick={() => handleUndo(action.id)}
-													title="Undo this action"
-												>
-													↶
-												</button>
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
+					<ActionsTable
+						{emailsWithActions}
+						onUndo={handleUndo}
+						onBatchUndo={handleBatchUndo}
+					/>
 				</div>
 			</div>
 		{/if}

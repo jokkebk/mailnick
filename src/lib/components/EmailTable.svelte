@@ -197,7 +197,7 @@
 
 {#if emails.length === 0}
 	<div class="alert alert-info">
-		No unread emails found in the last {syncDays} days. Click "Sync" to refresh, or use the dropdown
+		No unhandled emails found in the last {syncDays} days. Click "Sync" to refresh, or use the dropdown
 		to fetch a longer period.
 	</div>
 {:else}
