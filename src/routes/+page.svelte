@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import EmailTable from '$lib/components/EmailTable.svelte';
 
 	interface Email {
 		id: string;
@@ -42,44 +43,6 @@
 	let successMessage = $state<string | null>(null);
 	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
-
-	// Table sorting and filtering
-	let sortColumn = $state<'from' | 'to' | 'subject' | 'receivedAt'>('receivedAt');
-	let sortDirection = $state<'asc' | 'desc'>('desc');
-	let filterFrom = $state('');
-	let filterTo = $state('');
-	let filterSubject = $state('');
-
-	// Sorting and filtering logic
-	const sortedEmails = $derived.by(() => {
-		const sorted = [...emails];
-		sorted.sort((a, b) => {
-			let aVal = a[sortColumn];
-			let bVal = b[sortColumn];
-
-			if (aVal === null) return 1;
-			if (bVal === null) return -1;
-
-			if (sortColumn === 'receivedAt') {
-				const comparison = new Date(aVal).getTime() - new Date(bVal).getTime();
-				return sortDirection === 'asc' ? comparison : -comparison;
-			}
-
-			const comparison = String(aVal).localeCompare(String(bVal));
-			return sortDirection === 'asc' ? comparison : -comparison;
-		});
-		return sorted;
-	});
-
-	const filteredAndSortedEmails = $derived.by(() => {
-		return sortedEmails.filter((email) => {
-			return (
-				(!filterFrom || email.from.toLowerCase().includes(filterFrom.toLowerCase())) &&
-				(!filterTo || email.to?.toLowerCase().includes(filterTo.toLowerCase())) &&
-				(!filterSubject || email.subject?.toLowerCase().includes(filterSubject.toLowerCase()))
-			);
-		});
-	});
 
 	function accountUrl(path: string): string {
 		if (!selectedAccountId) {
@@ -290,25 +253,6 @@
 			const days = Math.floor(hours / 24);
 			return `${days}d ago`;
 		}
-	}
-
-	// Table interaction functions
-	function toggleSort(column: typeof sortColumn) {
-		if (sortColumn === column) {
-			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-		} else {
-			sortColumn = column;
-			sortDirection = 'asc';
-		}
-	}
-
-	function toggleExpand(email: Email) {
-		email.expanded = !email.expanded;
-		emails = [...emails]; // Trigger reactivity
-	}
-
-	function stopPropagation(event: MouseEvent) {
-		event.stopPropagation();
 	}
 
 	// Action handlers
@@ -533,141 +477,14 @@
 						</h3>
 					</div>
 
-					{#if emails.length === 0}
-						<div class="alert alert-info">
-							No unread emails found in the last {syncDays} days. Click "Sync" to refresh, or
-							use the dropdown to fetch a longer period.
-						</div>
-					{:else}
-						<div class="table-responsive">
-							<table class="table table-hover table-sm">
-								<thead class="thead-dark">
-									<tr>
-										<th style="width: 30%;">
-											From
-											<button
-												class="btn btn-sm btn-link text-white p-0 ml-1"
-												onclick={() => toggleSort('from')}
-												title="Sort by From"
-											>
-												{sortColumn === 'from' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
-											</button>
-											<input
-												type="text"
-												class="form-control form-control-sm mt-1"
-												placeholder="Filter..."
-												bind:value={filterFrom}
-											/>
-										</th>
-										<th style="width: 20%;">
-											To
-											<button
-												class="btn btn-sm btn-link text-white p-0 ml-1"
-												onclick={() => toggleSort('to')}
-												title="Sort by To"
-											>
-												{sortColumn === 'to' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
-											</button>
-											<input
-												type="text"
-												class="form-control form-control-sm mt-1"
-												placeholder="Filter..."
-												bind:value={filterTo}
-											/>
-										</th>
-										<th style="width: 30%;">
-											Subject
-											<button
-												class="btn btn-sm btn-link text-white p-0 ml-1"
-												onclick={() => toggleSort('subject')}
-												title="Sort by Subject"
-											>
-												{sortColumn === 'subject' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
-											</button>
-											<input
-												type="text"
-												class="form-control form-control-sm mt-1"
-												placeholder="Filter..."
-												bind:value={filterSubject}
-											/>
-										</th>
-										<th style="width: 10%;">
-											Date
-											<button
-												class="btn btn-sm btn-link text-white p-0 ml-1"
-												onclick={() => toggleSort('receivedAt')}
-												title="Sort by Date"
-											>
-												{sortColumn === 'receivedAt'
-													? sortDirection === 'asc'
-														? '↑'
-														: '↓'
-													: '⇅'}
-											</button>
-										</th>
-										<th style="width: 10%;">Actions</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each filteredAndSortedEmails as email (email.id)}
-										<tr
-											onclick={() => toggleExpand(email)}
-											class:table-primary={email.isUnread}
-											style="cursor: pointer;"
-										>
-											<td>{email.from}</td>
-											<td>{email.to || '-'}</td>
-											<td>{email.subject || '(No subject)'}</td>
-											<td>{formatDate(email.receivedAt)}</td>
-											<td onclick={stopPropagation}>
-												<div class="btn-group btn-group-sm">
-													<button
-														class="btn btn-outline-secondary"
-														onclick={() => handleMarkRead(email.id)}
-														disabled={!email.isUnread || email.processing}
-														title="Mark read"
-													>
-														✓
-													</button>
-													<button
-														class="btn btn-outline-secondary"
-														onclick={() => handleArchive(email.id)}
-														disabled={email.processing}
-														title="Archive"
-													>
-														📥
-													</button>
-													<button
-														class="btn btn-outline-secondary"
-														onclick={() => handleTrash(email.id)}
-														disabled={email.processing}
-														title="Trash"
-													>
-														🗑
-													</button>
-													<button
-														class="btn btn-outline-secondary"
-														onclick={() => handleLabel(email.id)}
-														disabled={email.processing}
-														title="TODO"
-													>
-														⚡
-													</button>
-												</div>
-											</td>
-										</tr>
-										{#if email.expanded}
-											<tr>
-												<td colspan="5" class="bg-light">
-													<small class="text-muted">{email.snippet}</small>
-												</td>
-											</tr>
-										{/if}
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
+					<EmailTable
+						{emails}
+						{syncDays}
+						onMarkRead={handleMarkRead}
+						onArchive={handleArchive}
+						onTrash={handleTrash}
+						onLabel={handleLabel}
+					/>
 				</div>
 			</div>
 
