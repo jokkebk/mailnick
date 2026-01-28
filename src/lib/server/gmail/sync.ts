@@ -1,7 +1,7 @@
 import { getGmailClient } from './client';
 import { db } from '../db';
 import { emails, actionHistory } from '../db/schema';
-import { eq, lt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 
 function extractDomain(email: string): string {
 	const match = email.match(/<(.+@(.+))>/);
@@ -12,8 +12,8 @@ function extractDomain(email: string): string {
 	return parts.length > 1 ? parts[1] : email;
 }
 
-export async function syncUnreadEmails(days: number = 7) {
-	const gmail = await getGmailClient();
+export async function syncUnreadEmails(accountId: string, days: number = 7) {
+	const gmail = await getGmailClient(accountId);
 
 	// Calculate date for query (Gmail uses YYYY/MM/DD format)
 	const dateThreshold = new Date();
@@ -37,7 +37,11 @@ export async function syncUnreadEmails(days: number = 7) {
 		if (!message.id) continue;
 
 		// Check if already exists
-		const existing = await db.select().from(emails).where(eq(emails.id, message.id)).get();
+		const existing = await db
+			.select()
+			.from(emails)
+			.where(and(eq(emails.id, message.id), eq(emails.accountId, accountId)))
+			.get();
 
 		// Fetch full message details
 		const fullMessage = await gmail.users.messages.get({
@@ -59,18 +63,20 @@ export async function syncUnreadEmails(days: number = 7) {
 
 		if (existing) {
 			// Update existing email
-			await db.update(emails)
+			await db
+				.update(emails)
 				.set({
 					isUnread,
 					labelIds,
 					snippet: fullMessage.data.snippet || '',
 					syncedAt: new Date()
 				})
-				.where(eq(emails.id, message.id));
+				.where(and(eq(emails.id, message.id), eq(emails.accountId, accountId)));
 		} else {
 			// Insert new email
 			await db.insert(emails).values({
 				id: message.id,
+				accountId,
 				threadId: fullMessage.data.threadId || message.threadId || '',
 				from,
 				fromDomain: extractDomain(from),
@@ -96,25 +102,32 @@ export async function syncUnreadEmails(days: number = 7) {
  * - Deletes actions older than retention period
  * - Deletes emails not referenced by any action
  */
-export async function cleanupBeforeSync(actionRetentionDays: number = 2) {
+export async function cleanupBeforeSync(accountId: string, actionRetentionDays: number = 2) {
 	// Calculate cutoff date for actions
 	const actionCutoff = new Date();
 	actionCutoff.setDate(actionCutoff.getDate() - actionRetentionDays);
 
 	// Delete old actions first
-	const deletedActionsResult = await db.delete(actionHistory).where(lt(actionHistory.timestamp, actionCutoff));
+	const deletedActionsResult = await db
+		.delete(actionHistory)
+		.where(and(eq(actionHistory.accountId, accountId), lt(actionHistory.timestamp, actionCutoff)));
 
 	// Get all email IDs that still have actions (these should be kept)
 	const emailsWithActions = await db
 		.select({ emailId: actionHistory.emailId })
 		.from(actionHistory)
+		.where(eq(actionHistory.accountId, accountId))
 		.all();
 
 	const emailIdsToKeep = new Set(emailsWithActions.map(row => row.emailId));
 
 	// Delete orphaned emails (those not in the keep set)
 	// Note: SQLite doesn't support NOT IN with large sets efficiently, so we do it in batches
-	const allEmails = await db.select({ id: emails.id }).from(emails).all();
+	const allEmails = await db
+		.select({ id: emails.id })
+		.from(emails)
+		.where(eq(emails.accountId, accountId))
+		.all();
 	let deletedEmails = 0;
 
 	const emailsToDelete = allEmails.filter(email => !emailIdsToKeep.has(email.id));

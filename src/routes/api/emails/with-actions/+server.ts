@@ -1,13 +1,19 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, actionHistory, tokens } from '$lib/server/db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ url }) => {
+	const accountId = url.searchParams.get('accountId');
+
 	try {
+		if (!accountId) {
+			return json({ error: 'Account ID is required' }, { status: 400 });
+		}
+
 		// Check if user is authenticated
-		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, 'default')).get();
+		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 
 		if (!storedTokens) {
 			return json({ error: 'Not authenticated' }, { status: 401 });
@@ -21,7 +27,13 @@ export const GET: RequestHandler = async () => {
 			})
 			.from(actionHistory)
 			.innerJoin(emails, eq(actionHistory.emailId, emails.id))
-			.where(eq(actionHistory.undone, false))
+			.where(
+				and(
+					eq(actionHistory.undone, false),
+					eq(actionHistory.accountId, accountId),
+					eq(emails.accountId, accountId)
+				)
+			)
 			.orderBy(desc(actionHistory.timestamp))
 			.all();
 

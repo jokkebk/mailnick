@@ -8,10 +8,15 @@ export const GET: RequestHandler = async ({ url }) => {
 	const category = url.searchParams.get('category');
 	const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
 	const days = parseInt(url.searchParams.get('days') || '7');
+	const accountId = url.searchParams.get('accountId');
 
 	try {
+		if (!accountId) {
+			return json({ error: 'Account ID is required' }, { status: 400 });
+		}
+
 		// Check if user is authenticated by checking for stored tokens
-		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, 'default')).get();
+		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 
 		if (!storedTokens) {
 			return json({ error: 'Not authenticated' }, { status: 401 });
@@ -22,7 +27,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		dateThreshold.setDate(dateThreshold.getDate() - days);
 
 		// Build query with date filter
-		const conditions = [gte(emails.receivedAt, dateThreshold)];
+		const conditions = [gte(emails.receivedAt, dateThreshold), eq(emails.accountId, accountId)];
 
 		if (unreadOnly) {
 			conditions.push(eq(emails.isUnread, true));
