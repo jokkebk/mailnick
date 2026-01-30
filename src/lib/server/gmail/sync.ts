@@ -61,6 +61,10 @@ export async function syncUnreadEmails(accountId: string, days: number = 7) {
 		const isUnread = fullMessage.data.labelIds?.includes('UNREAD') ?? true;
 		const labelIds = JSON.stringify(fullMessage.data.labelIds || []);
 
+		// Extract Gmail category from labelIds
+		const categoryLabel = fullMessage.data.labelIds?.find((label) => label.startsWith('CATEGORY_'));
+		const category = categoryLabel ? categoryLabel.replace('CATEGORY_', '') : null;
+
 		if (existing) {
 			// Update existing email
 			await db
@@ -68,6 +72,7 @@ export async function syncUnreadEmails(accountId: string, days: number = 7) {
 				.set({
 					isUnread,
 					labelIds,
+					category,
 					snippet: fullMessage.data.snippet || '',
 					syncedAt: new Date()
 				})
@@ -86,6 +91,7 @@ export async function syncUnreadEmails(accountId: string, days: number = 7) {
 				receivedAt,
 				isUnread,
 				labelIds,
+				category,
 				rawHeaders: JSON.stringify(headers),
 				syncedAt: new Date()
 			});
