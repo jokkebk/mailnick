@@ -41,14 +41,15 @@
 	}: Props = $props();
 
 	// Table sorting and filtering
-	let sortColumn = $state<'from' | 'to' | 'subject' | 'receivedAt'>('receivedAt');
+	let sortColumn = $state<'from' | 'to' | 'subject' | 'category' | 'receivedAt'>('receivedAt');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
 	let filterFrom = $state('');
 	let filterTo = $state('');
 	let filterSubject = $state('');
+	let filterCategory = $state('');
 
 	// Badge filter tracking
-	let activeFilterBadge = $state<{type: 'from' | 'to' | 'subject', value: string} | null>(null);
+	let activeFilterBadge = $state<{type: 'from' | 'to' | 'subject' | 'category', value: string} | null>(null);
 
 	// Clear badge when filters change manually (not via badge click)
 	$effect(() => {
@@ -56,7 +57,8 @@
 			const badgeMatchesFilter =
 				(activeFilterBadge.type === 'from' && filterFrom === activeFilterBadge.value) ||
 				(activeFilterBadge.type === 'to' && filterTo === activeFilterBadge.value) ||
-				(activeFilterBadge.type === 'subject' && filterSubject === activeFilterBadge.value);
+				(activeFilterBadge.type === 'subject' && filterSubject === activeFilterBadge.value) ||
+				(activeFilterBadge.type === 'category' && filterCategory === activeFilterBadge.value);
 
 			if (!badgeMatchesFilter) {
 				activeFilterBadge = null;
@@ -94,7 +96,8 @@
 			return (
 				(!filterFrom || email.from.toLowerCase().includes(filterFrom.toLowerCase())) &&
 				(!filterTo || email.to?.toLowerCase().includes(filterTo.toLowerCase())) &&
-				(!filterSubject || email.subject?.toLowerCase().includes(filterSubject.toLowerCase()))
+				(!filterSubject || email.subject?.toLowerCase().includes(filterSubject.toLowerCase())) &&
+				(!filterCategory || email.category?.toLowerCase().includes(filterCategory.toLowerCase()))
 			);
 		});
 	});
@@ -151,6 +154,18 @@
 			.map(([value, count]) => ({ value, count }))
 			.sort((a, b) => b.count - a.count)
 			.slice(0, 10); // Limit to top 10
+	});
+
+	const categoryBadges = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const email of emails) {
+			if (email.category) {
+				counts.set(email.category, (counts.get(email.category) || 0) + 1);
+			}
+		}
+		return Array.from(counts.entries())
+			.map(([value, count]) => ({ value, count }))
+			.sort((a, b) => b.count - a.count);
 	});
 
 	function formatDate(dateString: string): string {
@@ -265,7 +280,7 @@
 		}
 	}
 
-	function handleBadgeClick(type: 'from' | 'to' | 'subject', value: string) {
+	function handleBadgeClick(type: 'from' | 'to' | 'subject' | 'category', value: string) {
 		// Toggle: if same badge clicked, clear filter
 		if (activeFilterBadge?.type === type && activeFilterBadge?.value === value) {
 			clearAllFilters();
@@ -277,14 +292,22 @@
 			filterFrom = value;
 			filterTo = '';
 			filterSubject = '';
+			filterCategory = '';
 		} else if (type === 'to') {
 			filterFrom = '';
 			filterTo = value;
 			filterSubject = '';
-		} else {
+			filterCategory = '';
+		} else if (type === 'subject') {
 			filterFrom = '';
 			filterTo = '';
 			filterSubject = value;
+			filterCategory = '';
+		} else {
+			filterFrom = '';
+			filterTo = '';
+			filterSubject = '';
+			filterCategory = value;
 		}
 
 		activeFilterBadge = { type, value };
@@ -294,6 +317,7 @@
 		filterFrom = '';
 		filterTo = '';
 		filterSubject = '';
+		filterCategory = '';
 		activeFilterBadge = null;
 	}
 </script>
@@ -304,8 +328,90 @@
 		to fetch a longer period.
 	</div>
 {:else}
-	{#if selectedCount > 0}
-		<div class="batch-toolbar">
+	<!-- Filter badges bar - always visible -->
+	<div class="filter-badges-bar">
+		<div class="badge-group">
+			<span class="badge-label">From:</span>
+			{#if fromBadges.length > 0}
+				{#each fromBadges as badge}
+					<button
+						class="badge badge-pill badge-clickable"
+						class:badge-primary={activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value}
+						class:badge-secondary={!(activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value)}
+						onclick={() => handleBadgeClick('from', badge.value)}
+					>
+						{badge.value} ({badge.count})
+					</button>
+				{/each}
+			{:else}
+				<span class="text-muted" style="font-size: 0.875rem;">-</span>
+			{/if}
+		</div>
+
+		<div class="badge-group">
+			<span class="badge-label">To:</span>
+			{#if toBadges.length > 0}
+				{#each toBadges as badge}
+					<button
+						class="badge badge-pill badge-clickable"
+						class:badge-primary={activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value}
+						class:badge-secondary={!(activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value)}
+						onclick={() => handleBadgeClick('to', badge.value)}
+					>
+						{badge.value} ({badge.count})
+					</button>
+				{/each}
+			{:else}
+				<span class="text-muted" style="font-size: 0.875rem;">-</span>
+			{/if}
+		</div>
+
+		<div class="badge-group">
+			<span class="badge-label">Keywords:</span>
+			{#if subjectBadges.length > 0}
+				{#each subjectBadges as badge}
+					<button
+						class="badge badge-pill badge-clickable"
+						class:badge-primary={activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value}
+						class:badge-secondary={!(activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value)}
+						onclick={() => handleBadgeClick('subject', badge.value)}
+					>
+						{badge.value} ({badge.count})
+					</button>
+				{/each}
+			{:else}
+				<span class="text-muted" style="font-size: 0.875rem;">-</span>
+			{/if}
+		</div>
+
+		<div class="badge-group">
+			<span class="badge-label">Category:</span>
+			{#if categoryBadges.length > 0}
+				{#each categoryBadges as badge}
+					<button
+						class="badge badge-pill badge-clickable"
+						class:badge-primary={activeFilterBadge?.type === 'category' && activeFilterBadge?.value === badge.value}
+						class:badge-secondary={!(activeFilterBadge?.type === 'category' && activeFilterBadge?.value === badge.value)}
+						onclick={() => handleBadgeClick('category', badge.value)}
+					>
+						{badge.value} ({badge.count})
+					</button>
+				{/each}
+			{:else}
+				<span class="text-muted" style="font-size: 0.875rem;">-</span>
+			{/if}
+		</div>
+
+		{#if activeFilterBadge}
+			<button class="btn btn-sm btn-outline-secondary" onclick={clearAllFilters}>
+				Clear filter
+			</button>
+		{/if}
+	</div>
+
+	<!-- Batch toolbar - always visible -->
+	<div class="batch-toolbar">
+		{#if selectedCount > 0}
 			<div class="batch-info">
 				<button class="btn btn-sm btn-link p-0" onclick={deselectAll}>
 					<strong>{selectedCount}</strong> email{selectedCount !== 1 ? 's' : ''} selected
@@ -347,67 +453,13 @@
 					</button>
 				</div>
 			</div>
-		</div>
-	{/if}
-
-	<!-- Filter badges bar -->
-	{#if fromBadges.length > 0 || toBadges.length > 0 || subjectBadges.length > 0}
-		<div class="filter-badges-bar">
-			{#if fromBadges.length > 0}
-				<div class="badge-group">
-					<span class="badge-label">From:</span>
-					{#each fromBadges as badge}
-						<button
-							class="badge badge-pill badge-clickable"
-							class:badge-primary={activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value}
-							class:badge-secondary={!(activeFilterBadge?.type === 'from' && activeFilterBadge?.value === badge.value)}
-							onclick={() => handleBadgeClick('from', badge.value)}
-						>
-							{badge.value} ({badge.count})
-						</button>
-					{/each}
-				</div>
-			{/if}
-
-			{#if toBadges.length > 0}
-				<div class="badge-group">
-					<span class="badge-label">To:</span>
-					{#each toBadges as badge}
-						<button
-							class="badge badge-pill badge-clickable"
-							class:badge-primary={activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value}
-							class:badge-secondary={!(activeFilterBadge?.type === 'to' && activeFilterBadge?.value === badge.value)}
-							onclick={() => handleBadgeClick('to', badge.value)}
-						>
-							{badge.value} ({badge.count})
-						</button>
-					{/each}
-				</div>
-			{/if}
-
-			{#if subjectBadges.length > 0}
-				<div class="badge-group">
-					<span class="badge-label">Keywords:</span>
-					{#each subjectBadges as badge}
-						<button
-							class="badge badge-pill badge-clickable"
-							class:badge-primary={activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value}
-							class:badge-secondary={!(activeFilterBadge?.type === 'subject' && activeFilterBadge?.value === badge.value)}
-							onclick={() => handleBadgeClick('subject', badge.value)}
-						>
-							{badge.value} ({badge.count})
-						</button>
-					{/each}
-				</div>
-			{/if}
-
-			{#if activeFilterBadge}
-				<button class="btn btn-sm btn-outline-secondary" onclick={clearAllFilters}>
-					Clear filter
-				</button>
-			{/if}
-		</div>
-	{/if}
+		{:else}
+			<div class="batch-info">
+				<span class="text-muted">Select emails to perform batch actions</span>
+			</div>
+			<div class="batch-actions"></div>
+		{/if}
+	</div>
 
 	<div class="table-responsive">
 		<table class="table table-sm email-table">
@@ -453,7 +505,7 @@
 							bind:value={filterTo}
 						/>
 					</th>
-					<th style="width: 30%;">
+					<th style="width: 25%;">
 						Subject
 						<button
 							class="btn btn-sm btn-link text-white p-0 ml-1"
@@ -467,6 +519,22 @@
 							class="form-control form-control-sm mt-1"
 							placeholder="Filter..."
 							bind:value={filterSubject}
+						/>
+					</th>
+					<th style="width: 12%;">
+						Category
+						<button
+							class="btn btn-sm btn-link text-white p-0 ml-1"
+							onclick={() => toggleSort('category')}
+							title="Sort by Category"
+						>
+							{sortColumn === 'category' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
+						</button>
+						<input
+							type="text"
+							class="form-control form-control-sm mt-1"
+							placeholder="Filter..."
+							bind:value={filterCategory}
 						/>
 					</th>
 					<th style="width: 10%;">
@@ -502,6 +570,7 @@
 						<td>{email.from}</td>
 						<td>{email.to || '-'}</td>
 						<td class:font-weight-bold={email.isUnread}>{email.subject || '(No subject)'}</td>
+						<td>{email.category || '-'}</td>
 						<td>{formatDate(email.receivedAt)}</td>
 						<td onclick={stopPropagation}>
 							<div class="btn-group btn-group-sm">
@@ -542,7 +611,7 @@
 					</tr>
 					{#if email.expanded}
 						<tr>
-							<td colspan="6" class="bg-light">
+							<td colspan="7" class="bg-light">
 								<small class="text-muted">{email.snippet}</small>
 							</td>
 						</tr>
