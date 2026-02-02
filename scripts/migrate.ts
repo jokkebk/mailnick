@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS categories (
 
 CREATE TABLE IF NOT EXISTS emails (
 	id text PRIMARY KEY NOT NULL,
+	account_id text NOT NULL,
 	thread_id text NOT NULL,
 	"from" text NOT NULL,
 	from_domain text NOT NULL,
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS emails (
 	category text,
 	category_confidence integer,
 	raw_headers text,
-	synced_at integer NOT NULL
+	synced_at integer NOT NULL,
+	FOREIGN KEY (account_id) REFERENCES tokens(id)
 );
 
 CREATE TABLE IF NOT EXISTS tokens (
@@ -46,13 +48,28 @@ CREATE TABLE IF NOT EXISTS tokens (
 
 CREATE TABLE IF NOT EXISTS action_history (
 	id text PRIMARY KEY NOT NULL,
+	account_id text NOT NULL,
 	email_id text NOT NULL,
 	action_type text NOT NULL,
 	original_state text NOT NULL,
 	timestamp integer NOT NULL,
 	undone integer DEFAULT 0,
 	expires_at integer NOT NULL,
+	FOREIGN KEY (account_id) REFERENCES tokens(id),
 	FOREIGN KEY (email_id) REFERENCES emails(id)
+);
+
+CREATE TABLE IF NOT EXISTS cleanup_rules (
+	id text PRIMARY KEY NOT NULL,
+	account_id text NOT NULL,
+	name text NOT NULL,
+	match_criteria text NOT NULL,
+	display_order integer NOT NULL,
+	enabled integer DEFAULT 1,
+	created_at integer NOT NULL,
+	updated_at integer NOT NULL,
+	color text,
+	FOREIGN KEY (account_id) REFERENCES tokens(id)
 );
 `;
 

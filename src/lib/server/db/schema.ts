@@ -52,3 +52,21 @@ export const actionHistory = sqliteTable('action_history', {
 	undone: integer('undone', { mode: 'boolean' }).default(false),
 	expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull()
 });
+
+export const cleanupRules = sqliteTable('cleanup_rules', {
+	id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+	accountId: text('account_id')
+		.notNull()
+		.references(() => tokens.id),
+	name: text('name').notNull(),
+	matchCriteria: text('match_criteria').notNull(), // JSON
+	displayOrder: integer('display_order').notNull(),
+	enabled: integer('enabled', { mode: 'boolean' }).default(true),
+	createdAt: integer('created_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedAt: integer('updated_at', { mode: 'timestamp' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	color: text('color') // UI color indicator
+});

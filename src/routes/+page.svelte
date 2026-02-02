@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import EmailTable from '$lib/components/EmailTable.svelte';
 	import ActionsTable from '$lib/components/ActionsTable.svelte';
+	import CleanupTasksSection from '$lib/components/CleanupTasksSection.svelte';
 
 	interface Email {
 		id: string;
@@ -183,6 +184,10 @@
 				syncDays = daysToSync; // Update current sync period
 				localStorage.setItem('mailnick.syncDays', daysToSync.toString());
 				successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
+
+				// Clear hidden tasks after sync
+				clearHiddenTasks();
+
 				await loadEmails();
 			} else {
 				error = data.error || 'Failed to sync emails';
@@ -499,6 +504,28 @@
 		}
 	}
 
+	async function handleCleanupBatchAction(
+		emailIds: string[],
+		action: 'mark_read' | 'archive' | 'trash' | 'label'
+	) {
+		switch (action) {
+			case 'mark_read':
+				return handleBatchMarkRead(emailIds);
+			case 'archive':
+				return handleBatchArchive(emailIds);
+			case 'trash':
+				return handleBatchTrash(emailIds);
+			case 'label':
+				return handleBatchLabel(emailIds);
+		}
+	}
+
+	function clearHiddenTasks() {
+		if (!selectedAccountId) return;
+		const key = `mailnick.hiddenTasks.${selectedAccountId}`;
+		localStorage.removeItem(key);
+	}
+
 </script>
 
 <nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
@@ -592,6 +619,20 @@
 				</div>
 			</div>
 		{:else}
+			<!-- Cleanup Tasks Section -->
+			{#if selectedAccountId}
+				<div class="row mb-4">
+					<div class="col-12">
+						<CleanupTasksSection
+							accountId={selectedAccountId}
+							{emails}
+							onBatchAction={handleCleanupBatchAction}
+							onReloadEmails={loadEmails}
+						/>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Unhandled Emails Section -->
 			<div class="row mb-5">
 				<div class="col-12">
