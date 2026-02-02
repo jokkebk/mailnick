@@ -152,21 +152,24 @@
 	});
 </script>
 
-{#if visibleTasks.length > 0 || rules.length > 0}
-	<div class="cleanup-tasks-section mb-4">
-		<div class="d-flex justify-content-between align-items-center mb-3">
-			<h4 class="mb-0">Quick Cleanup Tasks</h4>
-			<button class="btn btn-sm btn-primary" onclick={() => openEditor()}>
-				+ Create New Task
-			</button>
-		</div>
+<div class="cleanup-tasks-section mb-4">
+	<div class="d-flex justify-content-between align-items-center mb-3">
+		<h4 class="mb-0">Quick Cleanup Tasks</h4>
+		<button class="btn btn-sm btn-primary" onclick={() => openEditor()}>
+			+ Create New Task
+		</button>
+	</div>
 
-		{#if visibleTasks.length === 0}
-			<div class="alert alert-info">
-				No emails match your cleanup rules. Create a new task or adjust existing rules.
-			</div>
-		{:else}
-			{#each visibleTasks as task}
+	{#if rules.length === 0}
+		<div class="alert alert-info">
+			No cleanup tasks configured yet. Click "+ Create New Task" to get started.
+		</div>
+	{:else if visibleTasks.length === 0}
+		<div class="alert alert-info">
+			No emails match your cleanup rules. Create a new task or adjust existing rules.
+		</div>
+	{:else}
+		{#each visibleTasks as task}
 				<div
 					class="card mb-3 task-card"
 					style={task.rule.color ? `border-left: 4px solid ${task.rule.color}` : ''}
@@ -261,10 +264,9 @@
 						</div>
 					</div>
 				</div>
-			{/each}
-		{/if}
-	</div>
-{/if}
+		{/each}
+	{/if}
+</div>
 
 <RuleEditorModal
 	rule={editingRuleId ? rules.find((r) => r.id === editingRuleId) : undefined}
