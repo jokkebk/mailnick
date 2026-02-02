@@ -53,7 +53,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			.from(emails)
 			.where(and(...conditions))
 			.orderBy(desc(emails.receivedAt))
-			.limit(100);
+			.limit(200);
 
 		return json({ emails: result });
 	} catch (error) {

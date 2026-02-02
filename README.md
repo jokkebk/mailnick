@@ -39,6 +39,7 @@ bun run scripts/migrate.ts
 ```bash
 bun run dev
 ```
+   (Note: The dev script uses `--bun` flag to ensure Bun runtime is used, required for `bun:sqlite` and other Bun-specific features)
 
 6. Open http://localhost:5173 and connect your Gmail account
 

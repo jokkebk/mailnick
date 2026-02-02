@@ -27,7 +27,7 @@ export async function syncUnreadEmails(accountId: string, days: number = 7) {
 	const response = await gmail.users.messages.list({
 		userId: 'me',
 		q: query,
-		maxResults: 100
+		maxResults: 200
 	});
 
 	const messages = response.data.messages || [];

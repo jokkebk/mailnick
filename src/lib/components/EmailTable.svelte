@@ -568,7 +568,7 @@
 							/>
 						</td>
 						<td>{email.from}</td>
-						<td>{email.to || '-'}</td>
+						<td>{email.to && email.to.length > 128 ? email.to.slice(0, 128) + '...' : (email.to || '-')}</td>
 						<td class:font-weight-bold={email.isUnread}>{email.subject || '(No subject)'}</td>
 						<td>{email.category || '-'}</td>
 						<td>{formatDate(email.receivedAt)}</td>
