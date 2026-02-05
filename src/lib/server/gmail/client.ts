@@ -36,7 +36,6 @@ export async function getGmailClient(accountId: string) {
 			}
 		} catch (error) {
 			if (isReauthError(error)) {
-				await db.delete(tokens).where(eq(tokens.id, accountId));
 				throw createReauthError();
 			}
 			throw error;

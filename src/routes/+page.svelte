@@ -45,6 +45,7 @@
 	let successMessage = $state<string | null>(null);
 	let reauthRequired = $state(false);
 	let reauthMessage = $state<string | null>(null);
+	let retrying = $state(false);
 	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
 
@@ -127,11 +128,16 @@
 	}
 
 	async function handleRetry() {
-		reauthRequired = false;
-		reauthMessage = null;
-		await loadAccounts(selectedAccountId);
-		if (selectedAccountId) {
-			await loadEmails();
+		retrying = true;
+		try {
+			reauthRequired = false;
+			reauthMessage = null;
+			await loadAccounts(selectedAccountId);
+			if (selectedAccountId) {
+				await loadEmails();
+			}
+		} finally {
+			retrying = false;
 		}
 	}
 
@@ -655,8 +661,10 @@
 				<div class="d-flex justify-content-between align-items-center" style="gap: 1rem;">
 					<div>{reauthMessage}</div>
 					<div class="btn-group btn-group-sm">
-						<button class="btn btn-outline-secondary" onclick={handleRetry}>Retry</button>
-						<button class="btn btn-primary" onclick={() => (window.location.href = '/auth')}>
+						<button class="btn btn-outline-secondary" onclick={handleRetry} disabled={retrying}>
+							{retrying ? 'Retrying...' : 'Retry'}
+						</button>
+						<button class="btn btn-primary" onclick={() => (window.location.href = '/auth')} disabled={retrying}>
 							Re-authenticate
 						</button>
 					</div>
