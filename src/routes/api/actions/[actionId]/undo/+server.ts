@@ -4,6 +4,7 @@ import { emails, actionHistory } from '$lib/server/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { getGmailClient } from '$lib/server/gmail/client';
 import { removeLabel } from '$lib/server/gmail/actions';
+import { handleReauthCleanup, reauthResponse } from '$lib/server/gmail/reauth';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, url }) => {
@@ -122,6 +123,9 @@ export const POST: RequestHandler = async ({ params, url }) => {
 
 		return json({ success: true });
 	} catch (error) {
+		if (await handleReauthCleanup(error, accountId)) {
+			return json(reauthResponse(), { status: 401 });
+		}
 		console.error('Undo error:', error);
 		return json({ error: 'Failed to undo action' }, { status: 500 });
 	}

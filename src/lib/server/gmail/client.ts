@@ -3,6 +3,7 @@ import { getOAuth2Client } from './oauth';
 import { db } from '../db';
 import { tokens } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { createReauthError, isReauthError } from './errors';
 
 export async function getGmailClient(accountId: string) {
 	// Get stored tokens
@@ -21,16 +22,23 @@ export async function getGmailClient(accountId: string) {
 	// Check if token is expired and refresh if needed
 	const now = new Date();
 	if (storedTokens.expiresAt < now) {
-		const { credentials } = await oauth2Client.refreshAccessToken();
-		if (credentials.access_token && credentials.expiry_date) {
-			await db
-				.update(tokens)
-				.set({
-					accessToken: credentials.access_token,
-					expiresAt: new Date(credentials.expiry_date)
-				})
-				.where(eq(tokens.id, accountId));
-			oauth2Client.setCredentials(credentials);
+		try {
+			const { credentials } = await oauth2Client.refreshAccessToken();
+			if (credentials.access_token && credentials.expiry_date) {
+				await db
+					.update(tokens)
+					.set({
+						accessToken: credentials.access_token,
+						expiresAt: new Date(credentials.expiry_date)
+					})
+					.where(eq(tokens.id, accountId));
+				oauth2Client.setCredentials(credentials);
+			}
+		} catch (error) {
+			if (isReauthError(error)) {
+				throw createReauthError();
+			}
+			throw error;
 		}
 	}
 
