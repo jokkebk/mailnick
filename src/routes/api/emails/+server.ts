@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { emails, tokens, actionHistory } from '$lib/server/db/schema';
 import { desc, eq, gte, and, notInArray, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
+import { reauthResponse } from '$lib/server/gmail/reauth';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const category = url.searchParams.get('category');
@@ -19,7 +20,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 
 		if (!storedTokens) {
-			return json({ error: 'Not authenticated' }, { status: 401 });
+			return json(reauthResponse(), { status: 401 });
 		}
 
 		// Calculate date threshold

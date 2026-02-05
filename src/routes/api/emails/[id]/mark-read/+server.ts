@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { emails, actionHistory } from '$lib/server/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { markAsRead } from '$lib/server/gmail/actions';
+import { handleReauthCleanup, reauthResponse } from '$lib/server/gmail/reauth';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, url }) => {
@@ -55,6 +56,9 @@ export const POST: RequestHandler = async ({ params, url }) => {
 
 		return json({ success: true, actionId });
 	} catch (error) {
+		if (await handleReauthCleanup(error, accountId)) {
+			return json(reauthResponse(), { status: 401 });
+		}
 		console.error('Mark as read error:', error);
 		return json({ error: 'Failed to mark as read' }, { status: 500 });
 	}

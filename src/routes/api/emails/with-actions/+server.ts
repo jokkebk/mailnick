@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { emails, actionHistory, tokens } from '$lib/server/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
+import { reauthResponse } from '$lib/server/gmail/reauth';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const accountId = url.searchParams.get('accountId');
@@ -16,7 +17,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 
 		if (!storedTokens) {
-			return json({ error: 'Not authenticated' }, { status: 401 });
+			return json(reauthResponse(), { status: 401 });
 		}
 
 		// Get all emails that have actions (not undone)

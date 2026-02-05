@@ -43,6 +43,8 @@
 	let syncing = $state(false);
 	let error = $state<string | null>(null);
 	let successMessage = $state<string | null>(null);
+	let reauthRequired = $state(false);
+	let reauthMessage = $state<string | null>(null);
 	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
 
@@ -73,6 +75,10 @@
 			}
 
 			accounts = data.accounts || [];
+			if (accounts.length > 0) {
+				reauthRequired = false;
+				reauthMessage = null;
+			}
 			if (accounts.length === 0) {
 				selectedAccountId = null;
 				authenticated = false;
@@ -91,6 +97,41 @@
 			accounts = [];
 			selectedAccountId = null;
 			authenticated = false;
+		}
+	}
+
+	function applyReauth(message?: string | null) {
+		reauthRequired = true;
+		reauthMessage = message || 'Re-authentication required';
+		error = null;
+		successMessage = null;
+		authenticated = false;
+		emails = [];
+		emailsWithActions = [];
+	}
+
+	function handleReauthFromResponse(response: Response, data: any): boolean {
+		if (response.status !== 401) return false;
+		if (data?.code === 'reauth_required') {
+			applyReauth(data?.error);
+			return true;
+		}
+		return false;
+	}
+
+	async function handleReauthFromResponses(responses: Response[]): Promise<boolean> {
+		const authResponse = responses.find((r) => r.status === 401);
+		if (!authResponse) return false;
+		const data = await authResponse.json().catch(() => ({}));
+		return handleReauthFromResponse(authResponse, data);
+	}
+
+	async function handleRetry() {
+		reauthRequired = false;
+		reauthMessage = null;
+		await loadAccounts(selectedAccountId);
+		if (selectedAccountId) {
+			await loadEmails();
 		}
 	}
 
@@ -139,16 +180,25 @@
 			const unreadResponse = await fetch(
 				accountUrl(`/api/emails?unreadOnly=true&days=${syncDays}`)
 			);
-			const unreadData = await unreadResponse.json();
+			const unreadData = await unreadResponse.json().catch(() => ({}));
 
 			// Fetch emails with actions
 			const actionsResponse = await fetch(accountUrl('/api/emails/with-actions'));
-			const actionsData = await actionsResponse.json();
+			const actionsData = await actionsResponse.json().catch(() => ({}));
+
+			if (
+				handleReauthFromResponse(unreadResponse, unreadData) ||
+				handleReauthFromResponse(actionsResponse, actionsData)
+			) {
+				return;
+			}
 
 			if (unreadResponse.ok && actionsResponse.ok) {
 				emails = unreadData.emails;
 				emailsWithActions = actionsData.emailsWithActions;
 				authenticated = true;
+				reauthRequired = false;
+				reauthMessage = null;
 			} else {
 				error = unreadData.error || actionsData.error || 'Failed to load emails';
 				authenticated = Boolean(selectedAccountId);
@@ -178,9 +228,15 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ days: daysToSync, accountId: selectedAccountId })
 			});
-			const data = await response.json();
+			const data = await response.json().catch(() => ({}));
+
+			if (handleReauthFromResponse(response, data)) {
+				return;
+			}
 
 			if (response.ok) {
+				reauthRequired = false;
+				reauthMessage = null;
 				syncDays = daysToSync; // Update current sync period
 				localStorage.setItem('mailnick.syncDays', daysToSync.toString());
 				successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
@@ -274,6 +330,8 @@
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/mark-read`), {
 				method: 'POST'
 			});
+			const data = await response.json().catch(() => ({}));
+			if (handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
 			// Reload both unhandled and action lists
@@ -298,6 +356,8 @@
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/archive`), {
 				method: 'POST'
 			});
+			const data = await response.json().catch(() => ({}));
+			if (handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
 			await loadEmails();
@@ -318,6 +378,8 @@
 
 		try {
 			const response = await fetch(accountUrl(`/api/emails/${emailId}/trash`), { method: 'POST' });
+			const data = await response.json().catch(() => ({}));
+			if (handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
 			await loadEmails();
@@ -342,6 +404,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ labelName: 'TODO' })
 			});
+			const data = await response.json().catch(() => ({}));
+			if (handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
 			await loadEmails();
@@ -365,6 +429,7 @@
 
 		try {
 			const results = await Promise.all(promises);
+			if (await handleReauthFromResponses(results)) return;
 			const failedCount = results.filter((r) => !r.ok).length;
 
 			if (failedCount > 0) {
@@ -392,6 +457,7 @@
 
 		try {
 			const results = await Promise.all(promises);
+			if (await handleReauthFromResponses(results)) return;
 			const failedCount = results.filter((r) => !r.ok).length;
 
 			if (failedCount > 0) {
@@ -419,6 +485,7 @@
 
 		try {
 			const results = await Promise.all(promises);
+			if (await handleReauthFromResponses(results)) return;
 			const failedCount = results.filter((r) => !r.ok).length;
 
 			if (failedCount > 0) {
@@ -450,6 +517,7 @@
 
 		try {
 			const results = await Promise.all(promises);
+			if (await handleReauthFromResponses(results)) return;
 			const failedCount = results.filter((r) => !r.ok).length;
 
 			if (failedCount > 0) {
@@ -471,6 +539,8 @@
 			const response = await fetch(accountUrl(`/api/actions/${actionId}/undo`), {
 				method: 'POST'
 			});
+			const data = await response.json().catch(() => ({}));
+			if (handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed to undo');
 
 			await loadEmails();
@@ -489,6 +559,7 @@
 
 		try {
 			const results = await Promise.all(promises);
+			if (await handleReauthFromResponses(results)) return;
 			const failedCount = results.filter((r) => !r.ok).length;
 
 			if (failedCount > 0) {
@@ -579,6 +650,19 @@
 </nav>
 
 <div class="container">
+		{#if reauthRequired}
+			<div class="alert alert-warning alert-dismissible fade show" role="alert">
+				<div class="d-flex justify-content-between align-items-center" style="gap: 1rem;">
+					<div>{reauthMessage}</div>
+					<div class="btn-group btn-group-sm">
+						<button class="btn btn-outline-secondary" onclick={handleRetry}>Retry</button>
+						<button class="btn btn-primary" onclick={() => (window.location.href = '/auth')}>
+							Re-authenticate
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 		{#if error}
 			<div class="alert alert-danger alert-dismissible fade show" role="alert">
 				{error}

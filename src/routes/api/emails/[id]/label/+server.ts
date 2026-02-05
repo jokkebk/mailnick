@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { emails, actionHistory } from '$lib/server/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { addLabel, ensureLabelExists } from '$lib/server/gmail/actions';
+import { handleReauthCleanup, reauthResponse } from '$lib/server/gmail/reauth';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, request, url }) => {
@@ -67,6 +68,9 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 
 		return json({ success: true, actionId, labelId });
 	} catch (error) {
+		if (await handleReauthCleanup(error, accountId)) {
+			return json(reauthResponse(), { status: 401 });
+		}
 		console.error('Label error:', error);
 		return json({ error: 'Failed to add label' }, { status: 500 });
 	}
