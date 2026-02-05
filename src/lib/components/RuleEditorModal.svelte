@@ -72,13 +72,9 @@
 </script>
 
 {#if show}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={onCancel}></div>
+	<button type="button" class="modal-backdrop" aria-label="Close dialog" onclick={onCancel}></button>
 	<div class="modal d-block" tabindex="-1" role="dialog">
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-dialog modal-lg" role="document" onclick={(e) => e.stopPropagation()}>
+		<div class="modal-dialog modal-lg" role="document">
 			<div class="modal-content">
 				<div class="modal-header">
 					<h5 class="modal-title">{rule ? 'Edit' : 'Create'} Cleanup Rule</h5>
@@ -116,8 +112,12 @@
 
 					<!-- Match Type -->
 					<div class="form-group">
-						<label>Match Type</label>
-						<div class="btn-group btn-group-toggle d-flex" role="group">
+						<div id="match-type-label" class="form-label">Match Type</div>
+						<div
+							class="btn-group btn-group-toggle d-flex"
+							role="group"
+							aria-labelledby="match-type-label"
+						>
 							<button
 								type="button"
 								class="btn btn-outline-secondary"
@@ -139,7 +139,7 @@
 
 					<!-- Conditions -->
 					<div class="form-group">
-						<label>Conditions</label>
+						<div id="conditions-label" class="form-label">Conditions</div>
 						{#each conditions as condition, index}
 							<div class="condition-row mb-2">
 								<div class="row">
@@ -229,6 +229,8 @@
 
 <style>
 	.modal-backdrop {
+		border: 0;
+		padding: 0;
 		position: fixed;
 		top: 0;
 		left: 0;
