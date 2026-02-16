@@ -59,7 +59,3 @@ bun run dev
 bun run build
 cd build && bun run index.js
 ```
-
-## Project Structure
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture documentation.
