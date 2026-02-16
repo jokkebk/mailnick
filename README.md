@@ -30,18 +30,21 @@ cp .env.example .env
    - Add redirect URI: `http://localhost:5173/auth/callback`
    - Copy Client ID and Client Secret to `.env`
 
-4. Run database migrations:
-```bash
-bun run scripts/migrate.ts
-```
-
-5. Start development server:
+4. Start development server:
 ```bash
 bun run dev
 ```
+
+   On first startup, the app will automatically:
+   - Validate your environment variables
+   - Run database migrations
+   - Create necessary tables
+
+   If environment variables are missing or invalid, the app will exit with a helpful error message.
+
    (Note: The dev script uses `--bun` flag to ensure Bun runtime is used, required for `bun:sqlite` and other Bun-specific features)
 
-6. Open http://localhost:5173 and connect your Gmail account
+5. Open http://localhost:5173 and connect your Gmail account
 
 ## Tech Stack
 
