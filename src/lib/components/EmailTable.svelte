@@ -25,6 +25,9 @@
 		onBatchArchive?: (emailIds: string[]) => Promise<void>;
 		onBatchTrash?: (emailIds: string[]) => Promise<void>;
 		onBatchLabel?: (emailIds: string[]) => Promise<void>;
+		onAIGroup?: (emailIds: string[]) => void;
+		aiAvailable?: boolean;
+		aiGrouping?: boolean;
 	}
 
 	let {
@@ -37,7 +40,10 @@
 		onBatchMarkRead,
 		onBatchArchive,
 		onBatchTrash,
-		onBatchLabel
+		onBatchLabel,
+		onAIGroup,
+		aiAvailable = false,
+		aiGrouping = false
 	}: Props = $props();
 
 	// Table sorting and filtering
@@ -255,6 +261,8 @@
 
 	const selectedCount = $derived(selectedIds.size);
 	const selectedEmailIds = $derived(Array.from(selectedIds));
+	const isFiltered = $derived(filteredAndSortedEmails.length < emails.length);
+	const filteredEmailIds = $derived(filteredAndSortedEmails.map((e) => e.id));
 
 	let batchProcessing = $state(false);
 
@@ -265,13 +273,15 @@
 
 	async function handleBatchAction(
 		action: 'markRead' | 'archive' | 'trash' | 'label',
-		handler?: (emailIds: string[]) => Promise<void>
+		handler?: (emailIds: string[]) => Promise<void>,
+		ids?: string[]
 	) {
-		if (!handler || selectedCount === 0) return;
+		const emailIds = ids ?? selectedEmailIds;
+		if (!handler || emailIds.length === 0) return;
 
 		batchProcessing = true;
 		try {
-			await handler(selectedEmailIds);
+			await handler(emailIds);
 			deselectAll();
 		} catch (error) {
 			console.error(`Batch ${action} failed:`, error);
@@ -452,12 +462,80 @@
 						⚡ Label
 					</button>
 				</div>
+				{#if aiAvailable && onAIGroup && selectedCount >= 2}
+					<button
+						class="btn btn-sm btn-outline-info ml-2"
+						onclick={() => onAIGroup(selectedEmailIds)}
+						disabled={aiGrouping}
+					>
+						{aiGrouping ? 'Grouping...' : `AI Group (${selectedCount})`}
+					</button>
+				{/if}
+			</div>
+		{:else if isFiltered}
+			<div class="batch-info">
+				<span class="text-muted">{filteredAndSortedEmails.length} of {emails.length} shown</span>
+			</div>
+			<div class="batch-actions">
+				<div class="btn-group btn-group-sm">
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('markRead', onBatchMarkRead, filteredEmailIds)}
+						disabled={batchProcessing || !onBatchMarkRead}
+						title="Mark all filtered as read"
+					>
+						✓ Mark all read
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('archive', onBatchArchive, filteredEmailIds)}
+						disabled={batchProcessing || !onBatchArchive}
+						title="Archive all filtered"
+					>
+						📥 Archive all
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('trash', onBatchTrash, filteredEmailIds)}
+						disabled={batchProcessing || !onBatchTrash}
+						title="Trash all filtered"
+					>
+						🗑 Trash all
+					</button>
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => handleBatchAction('label', onBatchLabel, filteredEmailIds)}
+						disabled={batchProcessing || !onBatchLabel}
+						title="Label all filtered"
+					>
+						⚡ Label all
+					</button>
+				</div>
+				{#if aiAvailable && onAIGroup && filteredAndSortedEmails.length >= 2}
+					<button
+						class="btn btn-sm btn-outline-info ml-2"
+						onclick={() => onAIGroup(filteredEmailIds)}
+						disabled={aiGrouping}
+					>
+						{aiGrouping ? 'Grouping...' : `AI Group (${filteredAndSortedEmails.length})`}
+					</button>
+				{/if}
 			</div>
 		{:else}
 			<div class="batch-info">
 				<span class="text-muted">Select emails to perform batch actions</span>
 			</div>
-			<div class="batch-actions"></div>
+			<div class="batch-actions">
+				{#if aiAvailable && onAIGroup && emails.length >= 2}
+					<button
+						class="btn btn-sm btn-outline-info"
+						onclick={() => onAIGroup(emails.map(e => e.id))}
+						disabled={aiGrouping}
+					>
+						{aiGrouping ? 'Grouping...' : `AI Group (${emails.length})`}
+					</button>
+				{/if}
+			</div>
 		{/if}
 	</div>
 

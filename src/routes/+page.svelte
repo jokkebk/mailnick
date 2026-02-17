@@ -3,6 +3,7 @@
 	import EmailTable from '$lib/components/EmailTable.svelte';
 	import ActionsTable from '$lib/components/ActionsTable.svelte';
 	import CleanupTasksSection from '$lib/components/CleanupTasksSection.svelte';
+	import AIGroupCards from '$lib/components/AIGroupCards.svelte';
 
 	interface Email {
 		id: string;
@@ -48,6 +49,18 @@
 	let retrying = $state(false);
 	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
+
+	// AI grouping state
+	interface AIGroup {
+		name: string;
+		emailIds: string[];
+		suggestedAction: 'archive' | 'trash' | 'mark_read' | 'label' | 'keep';
+		reason: string;
+	}
+	let aiGroups = $state<AIGroup[]>([]);
+	let aiGrouping = $state(false);
+	let aiGroupError = $state<string | null>(null);
+	let aiAvailable = $state(false);
 
 	function accountUrl(path: string): string {
 		if (!selectedAccountId) {
@@ -147,6 +160,8 @@
 		if (storedDays) {
 			syncDays = parseInt(storedDays, 10);
 		}
+
+		checkAIAvailability();
 
 		// Check URL params for auth status
 		const params = new URLSearchParams(window.location.search);
@@ -597,6 +612,83 @@
 		}
 	}
 
+	async function checkAIAvailability() {
+		try {
+			const response = await fetch('/api/ai/status');
+			const data = await response.json();
+			aiAvailable = data.available === true;
+		} catch {
+			aiAvailable = false;
+		}
+	}
+
+	async function handleAIGroup(emailIds: string[]) {
+		if (emailIds.length < 2) return;
+
+		aiGrouping = true;
+		aiGroupError = null;
+		aiGroups = [];
+
+		try {
+			const emailData = emails
+				.filter((e) => emailIds.includes(e.id))
+				.map((e) => ({
+					id: e.id,
+					from: e.from,
+					subject: e.subject,
+					snippet: e.snippet,
+					category: e.category
+				}));
+
+			const response = await fetch('/api/emails/ai-group', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ emails: emailData })
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || 'AI grouping failed');
+			}
+
+			aiGroups = data.groups || [];
+		} catch (e) {
+			aiGroupError = e instanceof Error ? e.message : 'AI grouping failed';
+			error = aiGroupError;
+		} finally {
+			aiGrouping = false;
+		}
+	}
+
+	function dismissAIGroups() {
+		aiGroups = [];
+		aiGroupError = null;
+	}
+
+	// Auto-clear AI groups when all grouped emails have been acted on
+	$effect(() => {
+		if (aiGroups.length === 0) return;
+		const emailIds = new Set(emails.map((e) => e.id));
+		const hasAny = aiGroups.some((g) => g.emailIds.some((id) => emailIds.has(id)));
+		if (!hasAny) {
+			aiGroups = [];
+		}
+	});
+
+	async function handleAIBatchAction(
+		emailIds: string[],
+		action: 'mark_read' | 'archive' | 'trash' | 'label'
+	) {
+		await handleCleanupBatchAction(emailIds, action);
+	}
+
+	// Auto-dismiss success toasts after 3 seconds
+	$effect(() => {
+		if (!successMessage) return;
+		const timer = setTimeout(() => { successMessage = null; }, 3000);
+		return () => clearTimeout(timer);
+	});
+
 	function clearHiddenTasks() {
 		if (!selectedAccountId) return;
 		const key = `mailnick.hiddenTasks.${selectedAccountId}`;
@@ -672,20 +764,24 @@
 			</div>
 		{/if}
 		{#if error}
-			<div class="alert alert-danger alert-dismissible fade show" role="alert">
-				{error}
-				<button type="button" class="close" onclick={() => (error = null)}>
-					<span>&times;</span>
-				</button>
+			<div class="toast-fixed">
+				<div class="alert alert-danger alert-dismissible fade show mb-0" role="alert">
+					{error}
+					<button type="button" class="close" onclick={() => (error = null)}>
+						<span>&times;</span>
+					</button>
+				</div>
 			</div>
 		{/if}
 
 		{#if successMessage}
-			<div class="alert alert-success alert-dismissible fade show" role="alert">
-				{successMessage}
-				<button type="button" class="close" onclick={() => (successMessage = null)}>
-					<span>&times;</span>
-				</button>
+			<div class="toast-fixed">
+				<div class="alert alert-success alert-dismissible fade show mb-0" role="alert">
+					{successMessage}
+					<button type="button" class="close" onclick={() => (successMessage = null)}>
+						<span>&times;</span>
+					</button>
+				</div>
 			</div>
 		{/if}
 
@@ -725,6 +821,33 @@
 				</div>
 			{/if}
 
+			<!-- AI Groups Section -->
+			{#if aiGroups.length > 0}
+				<div class="row mb-4">
+					<div class="col-12">
+						<AIGroupCards
+							groups={aiGroups}
+							{emails}
+							onBatchAction={handleAIBatchAction}
+							onDismiss={dismissAIGroups}
+						/>
+					</div>
+				</div>
+			{/if}
+
+			{#if aiGrouping}
+				<div class="row mb-4">
+					<div class="col-12">
+						<div class="text-center p-4" style="background-color: #f0f4ff; border-radius: 4px;">
+							<div class="spinner-border spinner-border-sm text-info mr-2" role="status">
+								<span class="sr-only">Grouping...</span>
+							</div>
+							AI is analyzing your emails...
+						</div>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Unhandled Emails Section -->
 			<div class="row mb-5">
 				<div class="col-12">
@@ -748,6 +871,9 @@
 						onBatchArchive={handleBatchArchive}
 						onBatchTrash={handleBatchTrash}
 						onBatchLabel={handleBatchLabel}
+						onAIGroup={handleAIGroup}
+						{aiAvailable}
+						{aiGrouping}
 					/>
 				</div>
 			</div>
@@ -773,3 +899,16 @@
 			</div>
 		{/if}
 	</div>
+
+<style>
+	.toast-fixed {
+		position: fixed;
+		top: 4.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 1050;
+		width: 90%;
+		max-width: 600px;
+		pointer-events: auto;
+	}
+</style>
