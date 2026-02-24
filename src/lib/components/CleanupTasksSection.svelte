@@ -21,13 +21,50 @@
 	let editingRuleId = $state<string | null>(null);
 	let showEditor = $state(false);
 	let processing = $state<Set<string>>(new Set());
+	// Per-task selection: Map<ruleId, Set<emailId>>
+	let selections = $state<Map<string, Set<string>>>(new Map());
+	let hiddenTaskIds = $state<string[]>([]);
 
-	const hiddenTaskIds = $derived.by(() => {
-		if (typeof window === 'undefined') return [];
-		const key = `mailnick.hiddenTasks.${accountId}`;
-		const data = localStorage.getItem(key);
-		return data ? JSON.parse(data) : [];
-	});
+	function getSelection(ruleId: string): Set<string> {
+		return selections.get(ruleId) ?? new Set();
+	}
+
+	function toggleItem(ruleId: string, emailId: string) {
+		const current = new Set(getSelection(ruleId));
+		if (current.has(emailId)) current.delete(emailId);
+		else current.add(emailId);
+		const next = new Map(selections);
+		next.set(ruleId, current);
+		selections = next;
+	}
+
+	function selectAll(ruleId: string, emailIds: string[]) {
+		const next = new Map(selections);
+		next.set(ruleId, new Set(emailIds));
+		selections = next;
+	}
+
+	function selectNone(ruleId: string) {
+		const next = new Map(selections);
+		next.delete(ruleId);
+		selections = next;
+	}
+
+	function getActionIds(ruleId: string, allIds: string[]): string[] {
+		const sel = getSelection(ruleId);
+		if (sel.size === 0) return allIds;
+		return allIds.filter((id) => sel.has(id));
+	}
+
+	// Svelte action to set the indeterminate property on a checkbox
+	function indeterminate(node: HTMLInputElement, value: boolean) {
+		node.indeterminate = value;
+		return {
+			update(value: boolean) {
+				node.indeterminate = value;
+			}
+		};
+	}
 
 	const taskMatches = $derived.by(() => {
 		return groupEmailsByRules(emails, rules, hiddenTaskIds);
@@ -36,6 +73,24 @@
 	const visibleTasks = $derived.by(() => {
 		return taskMatches.filter((task) => !task.hidden);
 	});
+
+	// Tasks that have matching emails but are hidden from the main list
+	const hiddenTasks = $derived(taskMatches.filter((t) => t.hidden));
+
+	// Enabled rules with no matching emails at all (not in taskMatches)
+	const noMatchRules = $derived(
+		rules.filter((r) => r.enabled && !taskMatches.some((t) => t.rule.id === r.id))
+	);
+
+	const hasInactive = $derived(hiddenTasks.length > 0 || noMatchRules.length > 0);
+	let showInactive = $state(false);
+
+	function loadHiddenTasks() {
+		if (typeof window === 'undefined') return;
+		const key = `mailnick.hiddenTasks.${accountId}`;
+		const data = localStorage.getItem(key);
+		hiddenTaskIds = data ? JSON.parse(data) : [];
+	}
 
 	async function loadRules() {
 		try {
@@ -66,18 +121,25 @@
 	}
 
 	function hideTask(ruleId: string) {
-		const key = `mailnick.hiddenTasks.${accountId}`;
-		const hidden = hiddenTaskIds;
-		if (!hidden.includes(ruleId)) {
-			localStorage.setItem(key, JSON.stringify([...hidden, ruleId]));
+		if (!hiddenTaskIds.includes(ruleId)) {
+			hiddenTaskIds = [...hiddenTaskIds, ruleId];
+			localStorage.setItem(`mailnick.hiddenTasks.${accountId}`, JSON.stringify(hiddenTaskIds));
 		}
 	}
 
+	function unhideTask(ruleId: string) {
+		hiddenTaskIds = hiddenTaskIds.filter((id) => id !== ruleId);
+		localStorage.setItem(`mailnick.hiddenTasks.${accountId}`, JSON.stringify(hiddenTaskIds));
+	}
+
 	async function handleBatchAction(task: TaskMatch, action: 'mark_read' | 'archive' | 'trash' | 'label') {
-		const emailIds = task.emails.map((e) => e.id);
+		const allIds = task.emails.map((e) => e.id);
+		const emailIds = getActionIds(task.rule.id, allIds);
+		if (emailIds.length === 0) return;
 		processing = new Set(processing).add(task.rule.id);
 		try {
 			await onBatchAction(emailIds, action);
+			selectNone(task.rule.id);
 			await onReloadEmails();
 		} catch (error) {
 			console.error('Batch action failed:', error);
@@ -142,12 +204,14 @@
 
 	onMount(() => {
 		loadRules();
+		loadHiddenTasks();
 	});
 
 	$effect(() => {
-		// Reload rules when account changes
+		// Reload rules and hidden tasks when account changes
 		if (accountId) {
 			loadRules();
+			loadHiddenTasks();
 		}
 	});
 </script>
@@ -164,22 +228,35 @@
 		<div class="alert alert-info">
 			No cleanup tasks configured yet. Click "+ Create New Task" to get started.
 		</div>
-	{:else if visibleTasks.length === 0}
-		<div class="alert alert-info">
-			No emails match your cleanup rules. Create a new task or adjust existing rules.
-		</div>
 	{:else}
-		{#each visibleTasks as task}
+		{#if visibleTasks.length === 0}
+			<div class="alert alert-info">
+				No emails match your cleanup rules. Create a new task or adjust existing rules.
+			</div>
+		{:else}
+			{#each visibleTasks as task}
+				{@const allIds = task.emails.map((e) => e.id)}
+				{@const sel = getSelection(task.rule.id)}
+				{@const allSelected = allIds.length > 0 && sel.size === allIds.length}
+				{@const someSelected = sel.size > 0 && sel.size < allIds.length}
+				{@const actionLabel = sel.size > 0 ? `(${sel.size})` : 'all'}
 				<div
 					class="card mb-3 task-card"
 					style={task.rule.color ? `border-left: 4px solid ${task.rule.color}` : ''}
 				>
 					<div class="card-body p-3">
 						<div class="d-flex justify-content-between align-items-start mb-2">
-							<h5 class="mb-0">
-								{task.rule.name}
+							<label class="master-checkbox-label mb-0">
+								<input
+									type="checkbox"
+									class="master-checkbox"
+									use:indeterminate={someSelected}
+									checked={allSelected}
+									onchange={() => allSelected || someSelected ? selectNone(task.rule.id) : selectAll(task.rule.id, allIds)}
+								/>
+								<h5 class="mb-0 d-inline">{task.rule.name}</h5>
 								<span class="badge badge-secondary ml-2">{task.totalCount}</span>
-							</h5>
+							</label>
 							<div class="btn-group btn-group-sm">
 								<button
 									class="btn btn-outline-secondary"
@@ -201,11 +278,16 @@
 						<!-- Email preview list -->
 						<div class="email-preview-list mb-2">
 							{#each task.emails.slice(0, expandedTasks.has(task.rule.id) ? undefined : 5) as email}
-								<div class="email-preview-item">
-									<span class="text-muted small">{email.from}</span>
+								<label class="email-preview-item">
+									<input
+										type="checkbox"
+										checked={sel.has(email.id)}
+										onchange={() => toggleItem(task.rule.id, email.id)}
+									/>
+									<span class="text-muted small ml-1">{email.from}</span>
 									<span class="mx-1">|</span>
 									<span>{email.subject || '(No subject)'}</span>
-								</div>
+								</label>
 							{/each}
 							{#if task.emails.length > 5 && !expandedTasks.has(task.rule.id)}
 								<button
@@ -231,28 +313,28 @@
 								onclick={() => handleBatchAction(task, 'mark_read')}
 								disabled={processing.has(task.rule.id)}
 							>
-								Mark all read
+								Mark read {actionLabel}
 							</button>
 							<button
 								class="btn btn-outline-success"
 								onclick={() => handleBatchAction(task, 'archive')}
 								disabled={processing.has(task.rule.id)}
 							>
-								Archive all
+								Archive {actionLabel}
 							</button>
 							<button
 								class="btn btn-outline-danger"
 								onclick={() => handleBatchAction(task, 'trash')}
 								disabled={processing.has(task.rule.id)}
 							>
-								Trash all
+								Trash {actionLabel}
 							</button>
 							<button
 								class="btn btn-outline-info"
 								onclick={() => handleBatchAction(task, 'label')}
 								disabled={processing.has(task.rule.id)}
 							>
-								TODO all
+								TODO {actionLabel}
 							</button>
 							<button
 								class="btn btn-outline-secondary"
@@ -264,7 +346,50 @@
 						</div>
 					</div>
 				</div>
-		{/each}
+			{/each}
+		{/if}
+
+		{#if hasInactive}
+			<div class="inactive-section">
+				<button
+					class="btn btn-link btn-sm p-0 text-muted"
+					onclick={() => (showInactive = !showInactive)}
+				>
+					{showInactive ? '▲' : '▼'}
+					{hiddenTasks.length + noMatchRules.length} hidden/inactive task{hiddenTasks.length + noMatchRules.length !== 1 ? 's' : ''}
+				</button>
+				{#if showInactive}
+					<div class="mt-2">
+						{#each hiddenTasks as task}
+							<div class="inactive-task-row">
+								<span>
+									{task.rule.name}
+									<span class="badge badge-secondary ml-1">{task.totalCount}</span>
+									<span class="badge badge-light ml-1">hidden</span>
+								</span>
+								<div class="btn-group btn-group-sm">
+									<button class="btn btn-outline-secondary btn-xs" onclick={() => unhideTask(task.rule.id)}>Unhide</button>
+									<button class="btn btn-outline-secondary btn-xs" onclick={() => openEditor(task.rule.id)}>Edit</button>
+									<button class="btn btn-outline-danger btn-xs" onclick={() => handleDeleteRule(task.rule.id)}>Delete</button>
+								</div>
+							</div>
+						{/each}
+						{#each noMatchRules as rule}
+							<div class="inactive-task-row">
+								<span class="text-muted">
+									{rule.name}
+									<span class="badge badge-light ml-1">no matches</span>
+								</span>
+								<div class="btn-group btn-group-sm">
+									<button class="btn btn-outline-secondary btn-xs" onclick={() => openEditor(rule.id)}>Edit</button>
+									<button class="btn btn-outline-danger btn-xs" onclick={() => handleDeleteRule(rule.id)}>Delete</button>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -287,22 +412,62 @@
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 	}
 
+	.master-checkbox-label {
+		display: flex;
+		align-items: center;
+		cursor: pointer;
+		gap: 0.5rem;
+	}
+
+	.master-checkbox {
+		width: 1rem;
+		height: 1rem;
+		flex-shrink: 0;
+		cursor: pointer;
+	}
+
 	.email-preview-list {
 		max-height: 300px;
 		overflow-y: auto;
 	}
 
 	.email-preview-item {
+		display: flex;
+		align-items: center;
 		padding: 4px 0;
 		font-size: 0.875rem;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: pointer;
+		margin: 0;
+	}
+
+	.email-preview-item:hover {
+		background-color: #e9ecef;
 	}
 
 	.cleanup-tasks-section {
 		background-color: #f8f9fa;
 		padding: 1rem;
 		border-radius: 4px;
+	}
+
+	.inactive-section {
+		margin-top: 0.5rem;
+	}
+
+	.inactive-task-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.35rem 0;
+		font-size: 0.875rem;
+		border-top: 1px solid #dee2e6;
+	}
+
+	.btn-xs {
+		padding: 0.1rem 0.4rem;
+		font-size: 0.75rem;
 	}
 </style>
