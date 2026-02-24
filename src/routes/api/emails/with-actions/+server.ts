@@ -4,15 +4,13 @@ import { emails, actionHistory, tokens } from '$lib/server/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { reauthResponse } from '$lib/server/gmail/reauth';
+import { getRequiredAccountId } from '$lib/server/utils';
 
 export const GET: RequestHandler = async ({ url }) => {
-	const accountId = url.searchParams.get('accountId');
+	const accountId = getRequiredAccountId(url);
+	if (accountId instanceof Response) return accountId;
 
 	try {
-		if (!accountId) {
-			return json({ error: 'Account ID is required' }, { status: 400 });
-		}
-
 		// Check if user is authenticated
 		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
 

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
 import { cleanupRules } from '$lib/server/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { getRequiredAccountId } from '$lib/server/utils';
 
 export const PUT: RequestHandler = async ({ params, request }) => {
 	const { ruleId } = params;
@@ -54,11 +55,8 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 export const DELETE: RequestHandler = async ({ params, url }) => {
 	const { ruleId } = params;
-	const accountId = url.searchParams.get('accountId');
-
-	if (!accountId) {
-		return json({ error: 'accountId is required' }, { status: 400 });
-	}
+	const accountId = getRequiredAccountId(url);
+	if (accountId instanceof Response) return accountId;
 
 	try {
 		await db

@@ -1,20 +1,20 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, tokens, actionHistory } from '$lib/server/db/schema';
-import { desc, eq, gte, and, notInArray, sql } from 'drizzle-orm';
+import { desc, eq, gte, and, notInArray } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { reauthResponse } from '$lib/server/gmail/reauth';
+import { getRequiredAccountId } from '$lib/server/utils';
+import { MAX_EMAIL_RESULTS } from '$lib/constants';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const category = url.searchParams.get('category');
 	const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
 	const days = parseInt(url.searchParams.get('days') || '7');
-	const accountId = url.searchParams.get('accountId');
+	const accountId = getRequiredAccountId(url);
+	if (accountId instanceof Response) return accountId;
 
 	try {
-		if (!accountId) {
-			return json({ error: 'Account ID is required' }, { status: 400 });
-		}
 
 		// Check if user is authenticated by checking for stored tokens
 		const storedTokens = await db.select().from(tokens).where(eq(tokens.id, accountId)).get();
@@ -54,7 +54,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			.from(emails)
 			.where(and(...conditions))
 			.orderBy(desc(emails.receivedAt))
-			.limit(200);
+			.limit(MAX_EMAIL_RESULTS);
 
 		return json({ emails: result });
 	} catch (error) {

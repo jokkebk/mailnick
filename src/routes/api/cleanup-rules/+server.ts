@@ -4,13 +4,11 @@ import { db } from '$lib/server/db';
 import { cleanupRules } from '$lib/server/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import type { CleanupRule } from '$lib/types/cleanup';
+import { getRequiredAccountId } from '$lib/server/utils';
 
 export const GET: RequestHandler = async ({ url }) => {
-	const accountId = url.searchParams.get('accountId');
-
-	if (!accountId) {
-		return json({ error: 'accountId is required' }, { status: 400 });
-	}
+	const accountId = getRequiredAccountId(url);
+	if (accountId instanceof Response) return accountId;
 
 	try {
 		const rules = await db

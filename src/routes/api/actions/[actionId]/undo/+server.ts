@@ -5,16 +5,15 @@ import { and, eq } from 'drizzle-orm';
 import { getGmailClient } from '$lib/server/gmail/client';
 import { removeLabel } from '$lib/server/gmail/actions';
 import { handleReauthCleanup, reauthResponse } from '$lib/server/gmail/reauth';
+import { getRequiredAccountId } from '$lib/server/utils';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ params, url }) => {
 	const { actionId } = params;
-	const accountId = url.searchParams.get('accountId');
+	const accountId = getRequiredAccountId(url);
+	if (accountId instanceof Response) return accountId;
 
 	try {
-		if (!accountId) {
-			return json({ error: 'Account ID is required' }, { status: 400 });
-		}
 
 		// Fetch action from actionHistory
 		const action = await db
