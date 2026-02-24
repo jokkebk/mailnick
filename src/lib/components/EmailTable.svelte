@@ -543,7 +543,7 @@
 		<table class="table table-sm email-table">
 			<thead class="thead-dark">
 				<tr>
-					<th style="width: 3%;">
+					<th style="width: 5%;">
 						<input
 							type="checkbox"
 							checked={allSelected}
@@ -551,7 +551,7 @@
 							aria-label="Select all"
 						/>
 					</th>
-					<th style="width: 27%;">
+					<th style="width: 20%;">
 						From
 						<button
 							class="btn btn-sm btn-link text-white p-0 ml-1"
@@ -599,7 +599,7 @@
 							bind:value={filterSubject}
 						/>
 					</th>
-					<th style="width: 12%;">
+					<th style="width: 10%;">
 						Category
 						<button
 							class="btn btn-sm btn-link text-white p-0 ml-1"
@@ -615,7 +615,7 @@
 							bind:value={filterCategory}
 						/>
 					</th>
-					<th style="width: 10%;">
+					<th style="width: 8%;">
 						Date
 						<button
 							class="btn btn-sm btn-link text-white p-0 ml-1"
@@ -625,7 +625,7 @@
 							{sortColumn === 'receivedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : '⇅'}
 						</button>
 					</th>
-					<th style="width: 10%;">Actions</th>
+					<th style="width: 12%;">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -645,11 +645,11 @@
 								aria-label="Select email"
 							/>
 						</td>
-						<td>{email.from}</td>
-						<td>{email.to && email.to.length > 128 ? email.to.slice(0, 128) + '...' : (email.to || '-')}</td>
-						<td class:font-weight-bold={email.isUnread}>{email.subject || '(No subject)'}</td>
-						<td>{email.category || '-'}</td>
-						<td>{formatDate(email.receivedAt)}</td>
+						<td style="word-break: break-all;">{email.from}</td>
+						<td style="word-break: break-all;">{email.to && email.to.length > 128 ? email.to.slice(0, 128) + '...' : (email.to || '-')}</td>
+						<td style="word-break: break-all;" class:font-weight-bold={email.isUnread}>{email.subject || '(No subject)'}</td>
+						<td style="word-break: break-all;">{email.category || '-'}</td>
+						<td style="word-break: break-all;">{formatDate(email.receivedAt)}</td>
 						<td onclick={stopPropagation}>
 							<div class="btn-group btn-group-sm">
 								<button
