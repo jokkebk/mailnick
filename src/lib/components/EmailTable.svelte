@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatDate } from '$lib/utils/format';
+
 	interface Email {
 		id: string;
 		from: string;
@@ -108,88 +110,46 @@
 		});
 	});
 
-	// Badge computations
-	const fromBadges = $derived.by(() => {
+	function computeBadges(
+		emailList: Email[],
+		extractor: (email: Email) => string[],
+		minCount = 3
+	): { value: string; count: number }[] {
 		const counts = new Map<string, number>();
-		for (const email of emails) {
-			counts.set(email.from, (counts.get(email.from) || 0) + 1);
-		}
-		return Array.from(counts.entries())
-			.filter(([_, count]) => count >= 3)
-			.map(([value, count]) => ({ value, count }))
-			.sort((a, b) => b.count - a.count);
-	});
-
-	const toBadges = $derived.by(() => {
-		const counts = new Map<string, number>();
-		for (const email of emails) {
-			if (email.to) {
-				// Handle comma-separated recipients
-				const recipients = email.to.split(',').map(r => r.trim());
-				for (const recipient of recipients) {
-					counts.set(recipient, (counts.get(recipient) || 0) + 1);
-				}
+		for (const email of emailList) {
+			for (const value of extractor(email)) {
+				counts.set(value, (counts.get(value) || 0) + 1);
 			}
 		}
 		return Array.from(counts.entries())
-			.filter(([_, count]) => count >= 3)
+			.filter(([_, count]) => count >= minCount)
 			.map(([value, count]) => ({ value, count }))
 			.sort((a, b) => b.count - a.count);
-	});
+	}
+
+	// Badge computations
+	const fromBadges = $derived(computeBadges(emails, (e) => [e.from]));
+
+	const toBadges = $derived(
+		computeBadges(emails, (e) => (e.to ? e.to.split(',').map((r) => r.trim()) : []))
+	);
 
 	const subjectBadges = $derived.by(() => {
-		const counts = new Map<string, number>();
-		const stopwords = new Set(['about', 'could', 'would', 'should', 'please', 'thank', 'thanks', 'email', 'message', 'regarding', 'concerning']);
-
-		for (const email of emails) {
-			if (email.subject) {
-				// Tokenize: split by spaces, punctuation
-				const words = email.subject
-					.split(/[\s\-_\[\](){}'",.;:!?]+/)
-					.filter(w => w.length >= 5 && !stopwords.has(w.toLowerCase()));
-
-				for (const word of words) {
-					const lower = word.toLowerCase();
-					counts.set(lower, (counts.get(lower) || 0) + 1);
-				}
-			}
-		}
-
-		return Array.from(counts.entries())
-			.filter(([_, count]) => count >= 3)
-			.map(([value, count]) => ({ value, count }))
-			.sort((a, b) => b.count - a.count)
-			.slice(0, 10); // Limit to top 10
+		const stopwords = new Set([
+			'about', 'could', 'would', 'should', 'please', 'thank', 'thanks',
+			'email', 'message', 'regarding', 'concerning'
+		]);
+		return computeBadges(emails, (e) => {
+			if (!e.subject) return [];
+			return e.subject
+				.split(/[\s\-_\[\](){}'",.;:!?]+/)
+				.filter((w) => w.length >= 5 && !stopwords.has(w.toLowerCase()))
+				.map((w) => w.toLowerCase());
+		}).slice(0, 10);
 	});
 
-	const categoryBadges = $derived.by(() => {
-		const counts = new Map<string, number>();
-		for (const email of emails) {
-			if (email.category) {
-				counts.set(email.category, (counts.get(email.category) || 0) + 1);
-			}
-		}
-		return Array.from(counts.entries())
-			.map(([value, count]) => ({ value, count }))
-			.sort((a, b) => b.count - a.count);
-	});
-
-	function formatDate(dateString: string): string {
-		const date = new Date(dateString);
-		const now = new Date();
-		const diff = now.getTime() - date.getTime();
-		const hours = Math.floor(diff / (1000 * 60 * 60));
-
-		if (hours < 1) {
-			const minutes = Math.floor(diff / (1000 * 60));
-			return `${minutes}m ago`;
-		} else if (hours < 24) {
-			return `${hours}h ago`;
-		} else {
-			const days = Math.floor(hours / 24);
-			return `${days}d ago`;
-		}
-	}
+	// categoryBadges shows all categories (no minimum count)
+	const categoryBadges = $derived(computeBadges(emails, (e) => (e.category ? [e.category] : []), 1));
 
 	function toggleSort(column: typeof sortColumn) {
 		if (sortColumn === column) {

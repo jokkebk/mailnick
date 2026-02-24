@@ -3,10 +3,18 @@
 	import type { CleanupRule, TaskMatch } from '$lib/types/cleanup';
 	import { groupEmailsByRules } from '$lib/utils/cleanup-matcher';
 	import RuleEditorModal from './RuleEditorModal.svelte';
+	import { STORAGE_KEYS } from '$lib/constants';
+
+	interface Email {
+		id: string;
+		from: string;
+		subject: string | null;
+		[key: string]: unknown;
+	}
 
 	interface Props {
 		accountId: string;
-		emails: any[];
+		emails: Email[];
 		onBatchAction: (
 			emailIds: string[],
 			action: 'mark_read' | 'archive' | 'trash' | 'label'
@@ -87,8 +95,7 @@
 
 	function loadHiddenTasks() {
 		if (typeof window === 'undefined') return;
-		const key = `mailnick.hiddenTasks.${accountId}`;
-		const data = localStorage.getItem(key);
+		const data = localStorage.getItem(STORAGE_KEYS.hiddenTasks(accountId));
 		hiddenTaskIds = data ? JSON.parse(data) : [];
 	}
 
@@ -123,13 +130,13 @@
 	function hideTask(ruleId: string) {
 		if (!hiddenTaskIds.includes(ruleId)) {
 			hiddenTaskIds = [...hiddenTaskIds, ruleId];
-			localStorage.setItem(`mailnick.hiddenTasks.${accountId}`, JSON.stringify(hiddenTaskIds));
+			localStorage.setItem(STORAGE_KEYS.hiddenTasks(accountId), JSON.stringify(hiddenTaskIds));
 		}
 	}
 
 	function unhideTask(ruleId: string) {
 		hiddenTaskIds = hiddenTaskIds.filter((id) => id !== ruleId);
-		localStorage.setItem(`mailnick.hiddenTasks.${accountId}`, JSON.stringify(hiddenTaskIds));
+		localStorage.setItem(STORAGE_KEYS.hiddenTasks(accountId), JSON.stringify(hiddenTaskIds));
 	}
 
 	async function handleBatchAction(task: TaskMatch, action: 'mark_read' | 'archive' | 'trash' | 'label') {

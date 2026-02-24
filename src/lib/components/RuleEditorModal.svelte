@@ -2,10 +2,17 @@
 	import type { CleanupRule, MatchCriteria, Condition } from '$lib/types/cleanup';
 	import { matchesRule } from '$lib/utils/cleanup-matcher';
 
+	interface Email {
+		id: string;
+		from: string;
+		subject: string | null;
+		[key: string]: unknown;
+	}
+
 	interface Props {
 		rule?: CleanupRule;
 		accountId: string;
-		emails: any[];
+		emails: Email[];
 		onSave: (rule: Partial<CleanupRule>) => void;
 		onCancel: () => void;
 		show: boolean;
