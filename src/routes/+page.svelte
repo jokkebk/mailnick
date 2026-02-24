@@ -4,741 +4,124 @@
 	import ActionsTable from '$lib/components/ActionsTable.svelte';
 	import CleanupTasksSection from '$lib/components/CleanupTasksSection.svelte';
 	import AIGroupCards from '$lib/components/AIGroupCards.svelte';
+	import { formatDate } from '$lib/utils/format';
+	import { STORAGE_KEYS } from '$lib/constants';
+	import { AuthState } from '$lib/stores/auth.svelte.js';
+	import { EmailState } from '$lib/stores/email.svelte.js';
+	import { AIState } from '$lib/stores/ai.svelte.js';
 
-	interface Email {
-		id: string;
-		from: string;
-		fromDomain: string;
-		to: string | null;
-		subject: string | null;
-		snippet: string | null;
-		receivedAt: string;
-		isUnread: boolean;
-		labelIds: string;
-		category: string | null;
-		expanded?: boolean;
-		processing?: boolean;
-	}
+	const authState = new AuthState();
+	const emailState = new EmailState(authState);
+	const aiState = new AIState(authState, emailState);
+	authState.bindEmailState(emailState);
 
-	interface ActionHistory {
-		id: string;
-		emailId: string;
-		actionType: string;
-		originalState: string;
-		timestamp: string;
-		undone: boolean;
-		expiresAt: string;
-	}
-
-	interface EmailWithAction {
-		email: Email;
-		action: ActionHistory;
-	}
-
-	let accounts = $state<string[]>([]);
-	let selectedAccountId = $state<string | null>(null);
-	let authenticated = $state(false);
-	let emails = $state<Email[]>([]);
-	let emailsWithActions = $state<EmailWithAction[]>([]);
-	let loading = $state(false);
-	let syncing = $state(false);
-	let error = $state<string | null>(null);
-	let successMessage = $state<string | null>(null);
-	let reauthRequired = $state(false);
-	let reauthMessage = $state<string | null>(null);
-	let retrying = $state(false);
-	let syncDays = $state(7); // Default to 7 days
 	let showSyncOptions = $state(false);
 
-	// AI grouping state
-	interface AIGroup {
-		name: string;
-		emailIds: string[];
-		suggestedAction: 'archive' | 'trash' | 'mark_read' | 'label' | 'keep';
-		reason: string;
-	}
-	let aiGroups = $state<AIGroup[]>([]);
-	let aiGrouping = $state(false);
-	let aiGroupError = $state<string | null>(null);
-	let aiAvailable = $state(false);
+	// Auto-dismiss success toasts after 3 seconds
+	$effect(() => {
+		const msg = authState.successMessage || emailState.successMessage;
+		if (!msg) return;
+		const timer = setTimeout(() => {
+			authState.successMessage = null;
+			emailState.successMessage = null;
+		}, 3000);
+		return () => clearTimeout(timer);
+	});
 
-	function accountUrl(path: string): string {
-		if (!selectedAccountId) {
-			return path;
+	// Auto-clear AI groups when all grouped emails have been acted on
+	$effect(() => {
+		if (aiState.aiGroups.length === 0) return;
+		const emailIds = new Set(emailState.emails.map((e) => e.id));
+		const hasAny = aiState.aiGroups.some((g) => g.emailIds.some((id) => emailIds.has(id)));
+		if (!hasAny) {
+			aiState.aiGroups = [];
 		}
-		const connector = path.includes('?') ? '&' : '?';
-		return `${path}${connector}accountId=${encodeURIComponent(selectedAccountId)}`;
-	}
-
-	function selectBestAccount(
-		preferred: string | null,
-		stored: string | null,
-		availableAccounts: string[]
-	): string {
-		if (preferred && availableAccounts.includes(preferred)) return preferred;
-		if (stored && availableAccounts.includes(stored)) return stored;
-		return availableAccounts[0];
-	}
-
-	async function loadAccounts(preferredAccountId?: string | null) {
-		try {
-			const response = await fetch('/api/accounts');
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to load accounts');
-			}
-
-			accounts = data.accounts || [];
-			if (accounts.length > 0) {
-				reauthRequired = false;
-				reauthMessage = null;
-			}
-			if (accounts.length === 0) {
-				selectedAccountId = null;
-				authenticated = false;
-				return;
-			}
-
-			const storedAccountId = localStorage.getItem('mailnick.accountId');
-			const nextAccount = selectBestAccount(preferredAccountId, storedAccountId, accounts);
-
-			selectedAccountId = nextAccount;
-			localStorage.setItem('mailnick.accountId', nextAccount);
-			authenticated = true;
-		} catch (e) {
-			console.error('Failed to load accounts:', e);
-			error = e instanceof Error ? e.message : 'Failed to load accounts';
-			accounts = [];
-			selectedAccountId = null;
-			authenticated = false;
-		}
-	}
-
-	function applyReauth(message?: string | null) {
-		reauthRequired = true;
-		reauthMessage = message || 'Re-authentication required';
-		error = null;
-		successMessage = null;
-		authenticated = false;
-		emails = [];
-		emailsWithActions = [];
-	}
-
-	function handleReauthFromResponse(response: Response, data: any): boolean {
-		if (response.status !== 401) return false;
-		if (data?.code === 'reauth_required') {
-			applyReauth(data?.error);
-			return true;
-		}
-		return false;
-	}
-
-	async function handleReauthFromResponses(responses: Response[]): Promise<boolean> {
-		const authResponse = responses.find((r) => r.status === 401);
-		if (!authResponse) return false;
-		const data = await authResponse.json().catch(() => ({}));
-		return handleReauthFromResponse(authResponse, data);
-	}
-
-	async function handleRetry() {
-		retrying = true;
-		try {
-			reauthRequired = false;
-			reauthMessage = null;
-			await loadAccounts(selectedAccountId);
-			if (selectedAccountId) {
-				await loadEmails();
-			}
-		} finally {
-			retrying = false;
-		}
-	}
+	});
 
 	onMount(async () => {
-		// Load syncDays from localStorage
-		const storedDays = localStorage.getItem('mailnick.syncDays');
+		const storedDays = localStorage.getItem(STORAGE_KEYS.syncDays);
 		if (storedDays) {
-			syncDays = parseInt(storedDays, 10);
+			emailState.syncDays = parseInt(storedDays, 10);
 		}
 
-		checkAIAvailability();
+		aiState.checkAIAvailability();
 
-		// Check URL params for auth status
 		const params = new URLSearchParams(window.location.search);
 		const justAuthenticated = params.get('success') === 'authenticated';
 		const accountParam = params.get('accountId');
 
 		if (justAuthenticated) {
-			successMessage = 'Successfully authenticated with Gmail! Syncing emails...';
+			emailState.successMessage = 'Successfully authenticated with Gmail! Syncing emails...';
 		} else if (params.get('error')) {
-			error = `Authentication error: ${params.get('error')}`;
+			authState.error = `Authentication error: ${params.get('error')}`;
 		}
 
-		await loadAccounts(accountParam);
+		await authState.loadAccounts(accountParam);
 
-		if (justAuthenticated && selectedAccountId) {
-			// Clean up URL
+		if (justAuthenticated && authState.selectedAccountId) {
 			window.history.replaceState({}, '', '/');
-			// Automatically sync emails after authentication
-			await syncEmails();
-		} else if (selectedAccountId) {
-			await loadEmails();
+			await emailState.syncEmails();
+		} else if (authState.selectedAccountId) {
+			await emailState.loadEmails();
 		}
 	});
 
-	async function loadEmails() {
-		if (!selectedAccountId) {
-			emails = [];
-			emailsWithActions = [];
-			authenticated = false;
-			return;
-		}
-
-		loading = true;
-		error = null;
-		try {
-			// Fetch unhandled emails (unread emails without any actions)
-			const unreadResponse = await fetch(
-				accountUrl(`/api/emails?unreadOnly=true&days=${syncDays}`)
-			);
-			const unreadData = await unreadResponse.json().catch(() => ({}));
-
-			// Fetch emails with actions
-			const actionsResponse = await fetch(accountUrl('/api/emails/with-actions'));
-			const actionsData = await actionsResponse.json().catch(() => ({}));
-
-			if (
-				handleReauthFromResponse(unreadResponse, unreadData) ||
-				handleReauthFromResponse(actionsResponse, actionsData)
-			) {
-				return;
-			}
-
-			if (unreadResponse.ok && actionsResponse.ok) {
-				emails = unreadData.emails;
-				emailsWithActions = actionsData.emailsWithActions;
-				authenticated = true;
-				reauthRequired = false;
-				reauthMessage = null;
-			} else {
-				error = unreadData.error || actionsData.error || 'Failed to load emails';
-				authenticated = Boolean(selectedAccountId);
-			}
-		} catch (e) {
-			console.error('Failed to load emails:', e);
-			authenticated = Boolean(selectedAccountId);
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function syncEmails(days?: number) {
-		if (!selectedAccountId) {
-			error = 'Select an account before syncing.';
-			return;
-		}
-
-		const daysToSync = days || syncDays;
-		syncing = true;
-		error = null;
-		successMessage = null;
-		showSyncOptions = false;
-		try {
-			const response = await fetch('/api/emails/sync', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ days: daysToSync, accountId: selectedAccountId })
-			});
-			const data = await response.json().catch(() => ({}));
-
-			if (handleReauthFromResponse(response, data)) {
-				return;
-			}
-
-			if (response.ok) {
-				reauthRequired = false;
-				reauthMessage = null;
-				syncDays = daysToSync; // Update current sync period
-				localStorage.setItem('mailnick.syncDays', daysToSync.toString());
-				successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
-
-				// Clear hidden tasks after sync
-				clearHiddenTasks();
-
-				await loadEmails();
-			} else {
-				error = data.error || 'Failed to sync emails';
-			}
-		} catch (e) {
-			error = 'Failed to sync emails';
-			console.error('Sync error:', e);
-		} finally {
-			syncing = false;
-		}
-	}
-
-	async function setActiveAccount(accountId: string, previousAccountId: string | null) {
-		if (accountId === previousAccountId) {
-			return;
-		}
-		selectedAccountId = accountId;
-		localStorage.setItem('mailnick.accountId', accountId);
-		emails = [];
-		emailsWithActions = [];
-		successMessage = null;
-		showSyncOptions = false;
-		await loadEmails();
-	}
-
-	async function handleDeleteAccount() {
-		if (!selectedAccountId) {
-			return;
-		}
-		const confirmed = window.confirm(`Remove account ${selectedAccountId}? This deletes stored data.`);
-		if (!confirmed) {
-			return;
-		}
-		try {
-			const response = await fetch(
-				`/api/accounts/${encodeURIComponent(selectedAccountId)}`,
-				{ method: 'DELETE' }
-			);
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data.error || 'Failed to delete account');
-			}
-			successMessage = `Removed account ${selectedAccountId}`;
-			await loadAccounts();
-			if (selectedAccountId) {
-				await loadEmails();
-			} else {
-				emails = [];
-				emailsWithActions = [];
-			}
-		} catch (e) {
-			console.error('Delete account error:', e);
-			error = 'Failed to delete account';
-		}
-	}
-
-	function formatDate(dateString: string): string {
-		const date = new Date(dateString);
-		const now = new Date();
-		const diff = now.getTime() - date.getTime();
-		const hours = Math.floor(diff / (1000 * 60 * 60));
-
-		if (hours < 1) {
-			const minutes = Math.floor(diff / (1000 * 60));
-			return `${minutes}m ago`;
-		} else if (hours < 24) {
-			return `${hours}h ago`;
-		} else {
-			const days = Math.floor(hours / 24);
-			return `${days}d ago`;
-		}
-	}
-
-	// Action handlers
-	async function handleMarkRead(emailId: string) {
-		if (!selectedAccountId) return;
-		const email = emails.find((e) => e.id === emailId);
-		if (!email || !email.isUnread) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => e.id !== emailId);
-
-		try {
-			const response = await fetch(accountUrl(`/api/emails/${emailId}/mark-read`), {
-				method: 'POST'
-			});
-			const data = await response.json().catch(() => ({}));
-			if (handleReauthFromResponse(response, data)) return;
-			if (!response.ok) throw new Error('Failed');
-
-			// Reload both unhandled and action lists
-			await loadEmails();
-			successMessage = 'Email marked as read';
-		} catch (err) {
-			error = 'Failed to mark as read';
-			// Reload to restore state on error
-			await loadEmails();
-		}
-	}
-
-	async function handleArchive(emailId: string) {
-		if (!selectedAccountId) return;
-		const email = emails.find((e) => e.id === emailId);
-		if (!email) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => e.id !== emailId);
-
-		try {
-			const response = await fetch(accountUrl(`/api/emails/${emailId}/archive`), {
-				method: 'POST'
-			});
-			const data = await response.json().catch(() => ({}));
-			if (handleReauthFromResponse(response, data)) return;
-			if (!response.ok) throw new Error('Failed');
-
-			await loadEmails();
-			successMessage = 'Email archived';
-		} catch (err) {
-			error = 'Failed to archive email';
-			await loadEmails();
-		}
-	}
-
-	async function handleTrash(emailId: string) {
-		if (!selectedAccountId) return;
-		const email = emails.find((e) => e.id === emailId);
-		if (!email) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => e.id !== emailId);
-
-		try {
-			const response = await fetch(accountUrl(`/api/emails/${emailId}/trash`), { method: 'POST' });
-			const data = await response.json().catch(() => ({}));
-			if (handleReauthFromResponse(response, data)) return;
-			if (!response.ok) throw new Error('Failed');
-
-			await loadEmails();
-			successMessage = 'Email moved to trash';
-		} catch (err) {
-			error = 'Failed to trash email';
-			await loadEmails();
-		}
-	}
-
-	async function handleLabel(emailId: string) {
-		if (!selectedAccountId) return;
-		const email = emails.find((e) => e.id === emailId);
-		if (!email) return;
-
-		// Optimistically remove from list (label action marks as "handled")
-		emails = emails.filter((e) => e.id !== emailId);
-
-		try {
-			const response = await fetch(accountUrl(`/api/emails/${emailId}/label`), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ labelName: 'TODO' })
-			});
-			const data = await response.json().catch(() => ({}));
-			if (handleReauthFromResponse(response, data)) return;
-			if (!response.ok) throw new Error('Failed');
-
-			await loadEmails();
-			successMessage = 'TODO label added';
-		} catch (err) {
-			error = 'Failed to add label';
-			await loadEmails();
-		}
-	}
-
-	// Batch action handlers
-	async function handleBatchMarkRead(emailIds: string[]) {
-		if (!selectedAccountId) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => !emailIds.includes(e.id));
-
-		const promises = emailIds.map((id) =>
-			fetch(accountUrl(`/api/emails/${id}/mark-read`), { method: 'POST' })
-		);
-
-		try {
-			const results = await Promise.all(promises);
-			if (await handleReauthFromResponses(results)) return;
-			const failedCount = results.filter((r) => !r.ok).length;
-
-			if (failedCount > 0) {
-				throw new Error(`${failedCount} email(s) failed`);
-			}
-
-			await loadEmails();
-			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} marked as read`;
-		} catch (err) {
-			error = `Failed to mark emails as read`;
-			await loadEmails();
-			throw err;
-		}
-	}
-
-	async function handleBatchArchive(emailIds: string[]) {
-		if (!selectedAccountId) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => !emailIds.includes(e.id));
-
-		const promises = emailIds.map((id) =>
-			fetch(accountUrl(`/api/emails/${id}/archive`), { method: 'POST' })
-		);
-
-		try {
-			const results = await Promise.all(promises);
-			if (await handleReauthFromResponses(results)) return;
-			const failedCount = results.filter((r) => !r.ok).length;
-
-			if (failedCount > 0) {
-				throw new Error(`${failedCount} email(s) failed`);
-			}
-
-			await loadEmails();
-			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} archived`;
-		} catch (err) {
-			error = `Failed to archive emails`;
-			await loadEmails();
-			throw err;
-		}
-	}
-
-	async function handleBatchTrash(emailIds: string[]) {
-		if (!selectedAccountId) return;
-
-		// Optimistically remove from list
-		emails = emails.filter((e) => !emailIds.includes(e.id));
-
-		const promises = emailIds.map((id) =>
-			fetch(accountUrl(`/api/emails/${id}/trash`), { method: 'POST' })
-		);
-
-		try {
-			const results = await Promise.all(promises);
-			if (await handleReauthFromResponses(results)) return;
-			const failedCount = results.filter((r) => !r.ok).length;
-
-			if (failedCount > 0) {
-				throw new Error(`${failedCount} email(s) failed`);
-			}
-
-			await loadEmails();
-			successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} moved to trash`;
-		} catch (err) {
-			error = `Failed to trash emails`;
-			await loadEmails();
-			throw err;
-		}
-	}
-
-	async function handleBatchLabel(emailIds: string[]) {
-		if (!selectedAccountId) return;
-
-		// Optimistically remove from list (label action marks as "handled")
-		emails = emails.filter((e) => !emailIds.includes(e.id));
-
-		const promises = emailIds.map((id) =>
-			fetch(accountUrl(`/api/emails/${id}/label`), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ labelName: 'TODO' })
-			})
-		);
-
-		try {
-			const results = await Promise.all(promises);
-			if (await handleReauthFromResponses(results)) return;
-			const failedCount = results.filter((r) => !r.ok).length;
-
-			if (failedCount > 0) {
-				throw new Error(`${failedCount} email(s) failed`);
-			}
-
-			await loadEmails();
-			successMessage = `TODO label added to ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`;
-		} catch (err) {
-			error = `Failed to add labels`;
-			await loadEmails();
-			throw err;
-		}
-	}
-
-	async function handleUndo(actionId: string) {
-		if (!selectedAccountId) return;
-		try {
-			const response = await fetch(accountUrl(`/api/actions/${actionId}/undo`), {
-				method: 'POST'
-			});
-			const data = await response.json().catch(() => ({}));
-			if (handleReauthFromResponse(response, data)) return;
-			if (!response.ok) throw new Error('Failed to undo');
-
-			await loadEmails();
-			successMessage = 'Action undone';
-		} catch (err) {
-			error = 'Failed to undo action';
-		}
-	}
-
-	async function handleBatchUndo(actionIds: string[]) {
-		if (!selectedAccountId) return;
-
-		const promises = actionIds.map((id) =>
-			fetch(accountUrl(`/api/actions/${id}/undo`), { method: 'POST' })
-		);
-
-		try {
-			const results = await Promise.all(promises);
-			if (await handleReauthFromResponses(results)) return;
-			const failedCount = results.filter((r) => !r.ok).length;
-
-			if (failedCount > 0) {
-				throw new Error(`${failedCount} action(s) failed`);
-			}
-
-			await loadEmails();
-			successMessage = `${actionIds.length} action${actionIds.length !== 1 ? 's' : ''} undone`;
-		} catch (err) {
-			error = `Failed to undo actions`;
-			await loadEmails();
-			throw err;
-		}
-	}
-
-	async function handleCleanupBatchAction(
-		emailIds: string[],
-		action: 'mark_read' | 'archive' | 'trash' | 'label'
-	) {
-		switch (action) {
-			case 'mark_read':
-				return handleBatchMarkRead(emailIds);
-			case 'archive':
-				return handleBatchArchive(emailIds);
-			case 'trash':
-				return handleBatchTrash(emailIds);
-			case 'label':
-				return handleBatchLabel(emailIds);
-		}
-	}
-
-	async function checkAIAvailability() {
-		try {
-			const response = await fetch('/api/ai/status');
-			const data = await response.json();
-			aiAvailable = data.available === true;
-		} catch {
-			aiAvailable = false;
-		}
-	}
-
-	async function handleAIGroup(emailIds: string[]) {
-		if (emailIds.length < 2) return;
-
-		aiGrouping = true;
-		aiGroupError = null;
-		aiGroups = [];
-
-		try {
-			const emailData = emails
-				.filter((e) => emailIds.includes(e.id))
-				.map((e) => ({
-					id: e.id,
-					from: e.from,
-					subject: e.subject,
-					snippet: e.snippet,
-					category: e.category
-				}));
-
-			const response = await fetch('/api/emails/ai-group', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ emails: emailData })
-			});
-
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data.error || 'AI grouping failed');
-			}
-
-			aiGroups = data.groups || [];
-		} catch (e) {
-			aiGroupError = e instanceof Error ? e.message : 'AI grouping failed';
-			error = aiGroupError;
-		} finally {
-			aiGrouping = false;
-		}
-	}
-
-	function dismissAIGroups() {
-		aiGroups = [];
-		aiGroupError = null;
-	}
-
-	// Auto-clear AI groups when all grouped emails have been acted on
-	$effect(() => {
-		if (aiGroups.length === 0) return;
-		const emailIds = new Set(emails.map((e) => e.id));
-		const hasAny = aiGroups.some((g) => g.emailIds.some((id) => emailIds.has(id)));
-		if (!hasAny) {
-			aiGroups = [];
-		}
-	});
-
-	async function handleAIBatchAction(
-		emailIds: string[],
-		action: 'mark_read' | 'archive' | 'trash' | 'label'
-	) {
-		await handleCleanupBatchAction(emailIds, action);
-	}
-
-	// Auto-dismiss success toasts after 3 seconds
-	$effect(() => {
-		if (!successMessage) return;
-		const timer = setTimeout(() => { successMessage = null; }, 3000);
-		return () => clearTimeout(timer);
-	});
-
-	function clearHiddenTasks() {
-		if (!selectedAccountId) return;
-		const key = `mailnick.hiddenTasks.${selectedAccountId}`;
-		localStorage.removeItem(key);
-	}
-
+	const error = $derived(authState.error || emailState.error);
+	const successMessage = $derived(authState.successMessage || emailState.successMessage);
 </script>
 
 <nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
 	<div class="container-fluid">
 		<span class="navbar-brand mb-0 h1">📧 MailNick</span>
 		<div class="ml-auto d-flex align-items-center" style="gap: 0.5rem;">
-			{#if accounts.length > 0}
+			{#if authState.accounts.length > 0}
 				<select
 					class="form-control form-control-sm mr-2"
 					style="width: auto; max-width: 250px;"
-					value={selectedAccountId}
+					value={authState.selectedAccountId}
 					onchange={(event) => {
-						const previousId = selectedAccountId;
-						setActiveAccount((event.currentTarget as HTMLSelectElement).value, previousId);
+						const previousId = authState.selectedAccountId;
+						authState.setActiveAccount(
+							(event.currentTarget as HTMLSelectElement).value,
+							previousId
+						);
 					}}
 				>
-					{#each accounts as account}
+					{#each authState.accounts as account}
 						<option value={account}>{account}</option>
 					{/each}
 				</select>
-				<button class="btn btn-outline-danger btn-sm mr-2" onclick={handleDeleteAccount}>
+				<button
+					class="btn btn-outline-danger btn-sm mr-2"
+					onclick={() => authState.handleDeleteAccount()}
+				>
 					Delete
 				</button>
 			{/if}
 			<a class="btn btn-outline-light btn-sm mr-2" href="/auth">Add account</a>
-			{#if authenticated}
+			{#if authState.authenticated}
 				<div class="btn-group btn-group-sm">
-					<button class="btn btn-primary btn-sm" onclick={() => syncEmails()} disabled={syncing}>
-						{syncing ? 'Syncing...' : `Sync (${syncDays}d)`}
+					<button
+						class="btn btn-primary btn-sm"
+						onclick={() => { showSyncOptions = false; emailState.syncEmails(); }}
+						disabled={emailState.syncing}
+					>
+						{emailState.syncing ? 'Syncing...' : `Sync (${emailState.syncDays}d)`}
 					</button>
 					<button
 						class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
 						onclick={() => (showSyncOptions = !showSyncOptions)}
-						disabled={syncing}
+						disabled={emailState.syncing}
 					>
 						<span class="sr-only">Toggle Dropdown</span>
 					</button>
 					{#if showSyncOptions}
 						<div class="dropdown-menu show" style="position: absolute; right: 0; top: 100%;">
-							<button class="dropdown-item" onclick={() => syncEmails(3)}>Last 3 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(7)}>Last 7 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(14)}>Last 14 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(30)}>Last 30 days</button>
-							<button class="dropdown-item" onclick={() => syncEmails(90)}>Last 90 days</button>
+							<button class="dropdown-item" onclick={() => { showSyncOptions = false; emailState.syncEmails(3); }}>Last 3 days</button>
+							<button class="dropdown-item" onclick={() => { showSyncOptions = false; emailState.syncEmails(7); }}>Last 7 days</button>
+							<button class="dropdown-item" onclick={() => { showSyncOptions = false; emailState.syncEmails(14); }}>Last 14 days</button>
+							<button class="dropdown-item" onclick={() => { showSyncOptions = false; emailState.syncEmails(30); }}>Last 30 days</button>
+							<button class="dropdown-item" onclick={() => { showSyncOptions = false; emailState.syncEmails(90); }}>Last 90 days</button>
 						</div>
 					{/if}
 				</div>
@@ -748,157 +131,174 @@
 </nav>
 
 <div class="container">
-		{#if reauthRequired}
-			<div class="alert alert-warning alert-dismissible fade show" role="alert">
-				<div class="d-flex justify-content-between align-items-center" style="gap: 1rem;">
-					<div>{reauthMessage}</div>
-					<div class="btn-group btn-group-sm">
-						<button class="btn btn-outline-secondary" onclick={handleRetry} disabled={retrying}>
-							{retrying ? 'Retrying...' : 'Retry'}
-						</button>
-						<button class="btn btn-primary" onclick={() => (window.location.href = '/auth')} disabled={retrying}>
-							Re-authenticate
-						</button>
-					</div>
-				</div>
-			</div>
-		{/if}
-		{#if error}
-			<div class="toast-fixed">
-				<div class="alert alert-danger alert-dismissible fade show mb-0" role="alert">
-					{error}
-					<button type="button" class="close" onclick={() => (error = null)}>
-						<span>&times;</span>
+	{#if authState.reauthRequired}
+		<div class="alert alert-warning alert-dismissible fade show" role="alert">
+			<div class="d-flex justify-content-between align-items-center" style="gap: 1rem;">
+				<div>{authState.reauthMessage}</div>
+				<div class="btn-group btn-group-sm">
+					<button
+						class="btn btn-outline-secondary"
+						onclick={() => authState.handleRetry()}
+						disabled={authState.retrying}
+					>
+						{authState.retrying ? 'Retrying...' : 'Retry'}
+					</button>
+					<button
+						class="btn btn-primary"
+						onclick={() => (window.location.href = '/auth')}
+						disabled={authState.retrying}
+					>
+						Re-authenticate
 					</button>
 				</div>
 			</div>
-		{/if}
+		</div>
+	{/if}
 
-		{#if successMessage}
-			<div class="toast-fixed">
-				<div class="alert alert-success alert-dismissible fade show mb-0" role="alert">
-					{successMessage}
-					<button type="button" class="close" onclick={() => (successMessage = null)}>
-						<span>&times;</span>
-					</button>
+	{#if error}
+		<div class="toast-fixed">
+			<div class="alert alert-danger alert-dismissible fade show mb-0" role="alert">
+				{error}
+				<button
+					type="button"
+					class="close"
+					onclick={() => { authState.error = null; emailState.error = null; }}
+				>
+					<span>&times;</span>
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if successMessage}
+		<div class="toast-fixed">
+			<div class="alert alert-success alert-dismissible fade show mb-0" role="alert">
+				{successMessage}
+				<button
+					type="button"
+					class="close"
+					onclick={() => { authState.successMessage = null; emailState.successMessage = null; }}
+				>
+					<span>&times;</span>
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if !authState.authenticated && !emailState.loading}
+		<div class="row justify-content-center mt-5">
+			<div class="col-md-6 text-center">
+				<div class="card">
+					<div class="card-body">
+						<h2 class="card-title">Welcome to MailNick</h2>
+						<p class="card-text">
+							Connect your Gmail account to start managing your inbox with intelligent
+							categorization.
+						</p>
+						<a href="/auth" class="btn btn-primary btn-lg"> Connect Gmail Account </a>
+					</div>
 				</div>
 			</div>
-		{/if}
-
-		{#if !authenticated && !loading}
-			<div class="row justify-content-center mt-5">
-				<div class="col-md-6 text-center">
-					<div class="card">
-						<div class="card-body">
-							<h2 class="card-title">Welcome to MailNick</h2>
-							<p class="card-text">
-								Connect your Gmail account to start managing your inbox with intelligent
-								categorization.
-							</p>
-							<a href="/auth" class="btn btn-primary btn-lg"> Connect Gmail Account </a>
-						</div>
-					</div>
-				</div>
+		</div>
+	{:else if emailState.loading}
+		<div class="text-center mt-5">
+			<div class="spinner-border" role="status">
+				<span class="sr-only">Loading...</span>
 			</div>
-		{:else if loading}
-			<div class="text-center mt-5">
-				<div class="spinner-border" role="status">
-					<span class="sr-only">Loading...</span>
-				</div>
-			</div>
-		{:else}
-			<!-- Cleanup Tasks Section -->
-			{#if selectedAccountId}
-				<div class="row mb-4">
-					<div class="col-12">
-						<CleanupTasksSection
-							accountId={selectedAccountId}
-							{emails}
-							onBatchAction={handleCleanupBatchAction}
-							onReloadEmails={loadEmails}
-						/>
-					</div>
-				</div>
-			{/if}
-
-			<!-- AI Groups Section -->
-			{#if aiGroups.length > 0}
-				<div class="row mb-4">
-					<div class="col-12">
-						<AIGroupCards
-							groups={aiGroups}
-							{emails}
-							onBatchAction={handleAIBatchAction}
-							onDismiss={dismissAIGroups}
-						/>
-					</div>
-				</div>
-			{/if}
-
-			{#if aiGrouping}
-				<div class="row mb-4">
-					<div class="col-12">
-						<div class="text-center p-4" style="background-color: #f0f4ff; border-radius: 4px;">
-							<div class="spinner-border spinner-border-sm text-info mr-2" role="status">
-								<span class="sr-only">Grouping...</span>
-							</div>
-							AI is analyzing your emails...
-						</div>
-					</div>
-				</div>
-			{/if}
-
-			<!-- Unhandled Emails Section -->
-			<div class="row mb-5">
+		</div>
+	{:else}
+		<!-- Cleanup Tasks Section -->
+		{#if authState.selectedAccountId}
+			<div class="row mb-4">
 				<div class="col-12">
-					<div class="d-flex justify-content-between align-items-center mb-3">
-						<h3>
-							Unhandled Emails ({emails.length})
-							<small class="text-muted" style="font-size: 0.6em;">
-								from last {syncDays} days
-							</small>
-						</h3>
-					</div>
-
-					<EmailTable
-						{emails}
-						{syncDays}
-						onMarkRead={handleMarkRead}
-						onArchive={handleArchive}
-						onTrash={handleTrash}
-						onLabel={handleLabel}
-						onBatchMarkRead={handleBatchMarkRead}
-						onBatchArchive={handleBatchArchive}
-						onBatchTrash={handleBatchTrash}
-						onBatchLabel={handleBatchLabel}
-						onAIGroup={handleAIGroup}
-						{aiAvailable}
-						{aiGrouping}
-					/>
-				</div>
-			</div>
-
-			<!-- Read Emails Section (with actions) -->
-			<div class="row">
-				<div class="col-12">
-					<div class="d-flex justify-content-between align-items-center mb-3">
-						<h3>
-							Recently Handled ({emailsWithActions.length})
-							<small class="text-muted" style="font-size: 0.6em;">
-								actions from last 2 days
-							</small>
-						</h3>
-					</div>
-
-					<ActionsTable
-						{emailsWithActions}
-						onUndo={handleUndo}
-						onBatchUndo={handleBatchUndo}
+					<CleanupTasksSection
+						accountId={authState.selectedAccountId}
+						emails={emailState.emails}
+						onBatchAction={(ids, action) => emailState.handleCleanupBatchAction(ids, action)}
+						onReloadEmails={() => emailState.loadEmails()}
 					/>
 				</div>
 			</div>
 		{/if}
-	</div>
+
+		<!-- AI Groups Section -->
+		{#if aiState.aiGroups.length > 0}
+			<div class="row mb-4">
+				<div class="col-12">
+					<AIGroupCards
+						groups={aiState.aiGroups}
+						emails={emailState.emails}
+						onBatchAction={(ids, action) => emailState.handleCleanupBatchAction(ids, action)}
+						onDismiss={() => aiState.dismissAIGroups()}
+					/>
+				</div>
+			</div>
+		{/if}
+
+		{#if aiState.aiGrouping}
+			<div class="row mb-4">
+				<div class="col-12">
+					<div class="text-center p-4" style="background-color: #f0f4ff; border-radius: 4px;">
+						<div class="spinner-border spinner-border-sm text-info mr-2" role="status">
+							<span class="sr-only">Grouping...</span>
+						</div>
+						AI is analyzing your emails...
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Unhandled Emails Section -->
+		<div class="row mb-5">
+			<div class="col-12">
+				<div class="d-flex justify-content-between align-items-center mb-3">
+					<h3>
+						Unhandled Emails ({emailState.emails.length})
+						<small class="text-muted" style="font-size: 0.6em;">
+							from last {emailState.syncDays} days
+						</small>
+					</h3>
+				</div>
+
+				<EmailTable
+					emails={emailState.emails}
+					syncDays={emailState.syncDays}
+					onMarkRead={(id) => emailState.handleMarkRead(id)}
+					onArchive={(id) => emailState.handleArchive(id)}
+					onTrash={(id) => emailState.handleTrash(id)}
+					onLabel={(id) => emailState.handleLabel(id)}
+					onBatchMarkRead={(ids) => emailState.handleBatchMarkRead(ids)}
+					onBatchArchive={(ids) => emailState.handleBatchArchive(ids)}
+					onBatchTrash={(ids) => emailState.handleBatchTrash(ids)}
+					onBatchLabel={(ids) => emailState.handleBatchLabel(ids)}
+					onAIGroup={(ids) => aiState.handleAIGroup(ids)}
+					aiAvailable={aiState.aiAvailable}
+					aiGrouping={aiState.aiGrouping}
+				/>
+			</div>
+		</div>
+
+		<!-- Read Emails Section (with actions) -->
+		<div class="row">
+			<div class="col-12">
+				<div class="d-flex justify-content-between align-items-center mb-3">
+					<h3>
+						Recently Handled ({emailState.emailsWithActions.length})
+						<small class="text-muted" style="font-size: 0.6em;">
+							actions from last 2 days
+						</small>
+					</h3>
+				</div>
+
+				<ActionsTable
+					emailsWithActions={emailState.emailsWithActions}
+					onUndo={(id) => emailState.handleUndo(id)}
+					onBatchUndo={(ids) => emailState.handleBatchUndo(ids)}
+				/>
+			</div>
+		</div>
+	{/if}
+</div>
 
 <style>
 	.toast-fixed {
