@@ -23,7 +23,8 @@ export async function performEmailAction(
 	emailId: string,
 	accountId: string,
 	actionType: ActionType,
-	execute: (email: EmailRow) => Promise<ActionResult | void>
+	execute: (email: EmailRow) => Promise<ActionResult | void>,
+	ruleId?: string
 ): Promise<Response> {
 	try {
 		const email = await db
@@ -61,7 +62,8 @@ export async function performEmailAction(
 			emailId,
 			actionType,
 			originalState: JSON.stringify({ ...originalState, ...extraState }),
-			expiresAt
+			expiresAt,
+			ruleId: ruleId || null
 		});
 
 		return json({ success: true, actionId, ...extraResponse });

@@ -50,7 +50,8 @@ export const actionHistory = sqliteTable('action_history', {
 		.notNull()
 		.$defaultFn(() => new Date()),
 	undone: integer('undone', { mode: 'boolean' }).default(false),
-	expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull()
+	expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+	ruleId: text('rule_id')
 });
 
 export const cleanupRules = sqliteTable('cleanup_rules', {

@@ -214,7 +214,7 @@
 					<CleanupTasksSection
 						accountId={authState.selectedAccountId}
 						emails={emailState.emails}
-						onBatchAction={(ids, action) => emailState.handleCleanupBatchAction(ids, action)}
+						onBatchAction={(ids, action, ruleId) => emailState.handleCleanupBatchAction(ids, action, ruleId)}
 						onReloadEmails={() => emailState.loadEmails()}
 					/>
 				</div>

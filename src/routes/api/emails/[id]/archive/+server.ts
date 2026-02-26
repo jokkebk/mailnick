@@ -8,10 +8,11 @@ export const POST: RequestHandler = async ({ params, url }) => {
 	const { id } = params;
 	const accountId = getRequiredAccountId(url);
 	if (accountId instanceof Response) return accountId;
+	const ruleId = url.searchParams.get('ruleId') || undefined;
 
 	return performEmailAction(id, accountId, 'archive', async () => {
 		await markAsRead(accountId, id);
 		await archiveEmail(accountId, id);
 		return { dbUpdate: { isUnread: false } };
-	});
+	}, ruleId);
 };

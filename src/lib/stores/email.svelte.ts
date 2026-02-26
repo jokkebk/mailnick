@@ -229,13 +229,14 @@ export class EmailState {
 		}
 	}
 
-	async handleBatchMarkRead(emailIds: string[]) {
+	async handleBatchMarkRead(emailIds: string[], ruleId?: string) {
 		if (!this.auth.selectedAccountId) return;
 
 		this.emails = this.emails.filter((e) => !emailIds.includes(e.id));
 
+		const ruleParam = ruleId ? `&ruleId=${encodeURIComponent(ruleId)}` : '';
 		const promises = emailIds.map((id) =>
-			fetch(this.auth.accountUrl(`/api/emails/${id}/mark-read`), { method: 'POST' })
+			fetch(this.auth.accountUrl(`/api/emails/${id}/mark-read`) + ruleParam, { method: 'POST' })
 		);
 
 		try {
@@ -253,13 +254,14 @@ export class EmailState {
 		}
 	}
 
-	async handleBatchArchive(emailIds: string[]) {
+	async handleBatchArchive(emailIds: string[], ruleId?: string) {
 		if (!this.auth.selectedAccountId) return;
 
 		this.emails = this.emails.filter((e) => !emailIds.includes(e.id));
 
+		const ruleParam = ruleId ? `&ruleId=${encodeURIComponent(ruleId)}` : '';
 		const promises = emailIds.map((id) =>
-			fetch(this.auth.accountUrl(`/api/emails/${id}/archive`), { method: 'POST' })
+			fetch(this.auth.accountUrl(`/api/emails/${id}/archive`) + ruleParam, { method: 'POST' })
 		);
 
 		try {
@@ -277,13 +279,14 @@ export class EmailState {
 		}
 	}
 
-	async handleBatchTrash(emailIds: string[]) {
+	async handleBatchTrash(emailIds: string[], ruleId?: string) {
 		if (!this.auth.selectedAccountId) return;
 
 		this.emails = this.emails.filter((e) => !emailIds.includes(e.id));
 
+		const ruleParam = ruleId ? `&ruleId=${encodeURIComponent(ruleId)}` : '';
 		const promises = emailIds.map((id) =>
-			fetch(this.auth.accountUrl(`/api/emails/${id}/trash`), { method: 'POST' })
+			fetch(this.auth.accountUrl(`/api/emails/${id}/trash`) + ruleParam, { method: 'POST' })
 		);
 
 		try {
@@ -301,13 +304,14 @@ export class EmailState {
 		}
 	}
 
-	async handleBatchLabel(emailIds: string[]) {
+	async handleBatchLabel(emailIds: string[], ruleId?: string) {
 		if (!this.auth.selectedAccountId) return;
 
 		this.emails = this.emails.filter((e) => !emailIds.includes(e.id));
 
+		const ruleParam = ruleId ? `&ruleId=${encodeURIComponent(ruleId)}` : '';
 		const promises = emailIds.map((id) =>
-			fetch(this.auth.accountUrl(`/api/emails/${id}/label`), {
+			fetch(this.auth.accountUrl(`/api/emails/${id}/label`) + ruleParam, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ labelName: 'TODO' })
@@ -331,17 +335,18 @@ export class EmailState {
 
 	async handleCleanupBatchAction(
 		emailIds: string[],
-		action: 'mark_read' | 'archive' | 'trash' | 'label'
+		action: 'mark_read' | 'archive' | 'trash' | 'label',
+		ruleId?: string
 	) {
 		switch (action) {
 			case 'mark_read':
-				return this.handleBatchMarkRead(emailIds);
+				return this.handleBatchMarkRead(emailIds, ruleId);
 			case 'archive':
-				return this.handleBatchArchive(emailIds);
+				return this.handleBatchArchive(emailIds, ruleId);
 			case 'trash':
-				return this.handleBatchTrash(emailIds);
+				return this.handleBatchTrash(emailIds, ruleId);
 			case 'label':
-				return this.handleBatchLabel(emailIds);
+				return this.handleBatchLabel(emailIds, ruleId);
 		}
 	}
 

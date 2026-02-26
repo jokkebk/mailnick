@@ -17,7 +17,8 @@
 		emails: Email[];
 		onBatchAction: (
 			emailIds: string[],
-			action: 'mark_read' | 'archive' | 'trash' | 'label'
+			action: 'mark_read' | 'archive' | 'trash' | 'label',
+			ruleId?: string
 		) => Promise<void>;
 		onReloadEmails: () => Promise<void>;
 	}
@@ -32,6 +33,7 @@
 	// Per-task selection: Map<ruleId, Set<emailId>>
 	let selections = $state<Map<string, Set<string>>>(new Map());
 	let hiddenTaskIds = $state<string[]>([]);
+	let ruleStats = $state<Record<string, Record<string, number>>>({});
 
 	function getSelection(ruleId: string): Set<string> {
 		return selections.get(ruleId) ?? new Set();
@@ -93,10 +95,33 @@
 	const hasInactive = $derived(hiddenTasks.length > 0 || noMatchRules.length > 0);
 	let showInactive = $state(false);
 
+	function formatStats(ruleId: string): string {
+		const stats = ruleStats[ruleId];
+		if (!stats) return '';
+		const parts: string[] = [];
+		if (stats.archive) parts.push(`${stats.archive} archived`);
+		if (stats.mark_read) parts.push(`${stats.mark_read} read`);
+		if (stats.trash) parts.push(`${stats.trash} trashed`);
+		if (stats.label) parts.push(`${stats.label} labeled`);
+		return parts.join(', ');
+	}
+
 	function loadHiddenTasks() {
 		if (typeof window === 'undefined') return;
 		const data = localStorage.getItem(STORAGE_KEYS.hiddenTasks(accountId));
 		hiddenTaskIds = data ? JSON.parse(data) : [];
+	}
+
+	async function loadStats() {
+		try {
+			const response = await fetch(`/api/cleanup-rules/stats?accountId=${accountId}`);
+			const data = await response.json();
+			if (data.stats) {
+				ruleStats = data.stats;
+			}
+		} catch (error) {
+			console.error('Failed to load rule stats:', error);
+		}
 	}
 
 	async function loadRules() {
@@ -145,9 +170,10 @@
 		if (emailIds.length === 0) return;
 		processing = new Set(processing).add(task.rule.id);
 		try {
-			await onBatchAction(emailIds, action);
+			await onBatchAction(emailIds, action, task.rule.id);
 			selectNone(task.rule.id);
 			await onReloadEmails();
+			loadStats();
 		} catch (error) {
 			console.error('Batch action failed:', error);
 		} finally {
@@ -212,6 +238,7 @@
 	onMount(() => {
 		loadRules();
 		loadHiddenTasks();
+		loadStats();
 	});
 
 	$effect(() => {
@@ -219,6 +246,7 @@
 		if (accountId) {
 			loadRules();
 			loadHiddenTasks();
+			loadStats();
 		}
 	});
 </script>
@@ -263,6 +291,9 @@
 								/>
 								<h5 class="mb-0 d-inline">{task.rule.name}</h5>
 								<span class="badge badge-secondary ml-2">{task.totalCount}</span>
+								{#if formatStats(task.rule.id)}
+									<small class="text-muted ml-2">({formatStats(task.rule.id)})</small>
+								{/if}
 							</label>
 							<div class="btn-group btn-group-sm">
 								<button
@@ -373,6 +404,9 @@
 									{task.rule.name}
 									<span class="badge badge-secondary ml-1">{task.totalCount}</span>
 									<span class="badge badge-light ml-1">hidden</span>
+									{#if formatStats(task.rule.id)}
+										<small class="text-muted ml-1">({formatStats(task.rule.id)})</small>
+									{/if}
 								</span>
 								<div class="btn-group btn-group-sm">
 									<button class="btn btn-outline-secondary btn-xs" onclick={() => unhideTask(task.rule.id)}>Unhide</button>
@@ -386,6 +420,9 @@
 								<span class="text-muted">
 									{rule.name}
 									<span class="badge badge-light ml-1">no matches</span>
+									{#if formatStats(rule.id)}
+										<small class="ml-1">({formatStats(rule.id)})</small>
+									{/if}
 								</span>
 								<div class="btn-group btn-group-sm">
 									<button class="btn btn-outline-secondary btn-xs" onclick={() => openEditor(rule.id)}>Edit</button>

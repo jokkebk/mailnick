@@ -124,6 +124,14 @@ CREATE TABLE IF NOT EXISTS cleanup_rules (
 
 	try {
 		db.exec(migration);
+
+		// Add rule_id column to action_history (idempotent)
+		try {
+			db.exec(`ALTER TABLE action_history ADD COLUMN rule_id TEXT;`);
+		} catch {
+			// Column already exists
+		}
+
 		console.log('✅ Database schema ready');
 	} catch (error) {
 		console.error('❌ Failed to initialize database:', error);

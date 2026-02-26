@@ -8,6 +8,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	const { id } = params;
 	const accountId = getRequiredAccountId(url);
 	if (accountId instanceof Response) return accountId;
+	const ruleId = url.searchParams.get('ruleId') || undefined;
 
 	const { labelName } = await request.json();
 	if (!labelName) {
@@ -28,5 +29,5 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 			extraState: { addedLabelId: labelId },
 			extraResponse: { labelId }
 		};
-	});
+	}, ruleId);
 };
