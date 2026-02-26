@@ -42,10 +42,14 @@
 		}
 	});
 
-	const matchCount = $derived.by(() => {
+	const matchingEmails = $derived.by(() => {
 		const criteria: MatchCriteria = { type: matchType, conditions };
-		return emails.filter((email) => matchesRule(email, criteria)).length;
+		return emails.filter((email) => matchesRule(email, criteria));
 	});
+
+	const matchCount = $derived(matchingEmails.length);
+
+	let showAllMatches = $state(false);
 
 	function addCondition() {
 		conditions = [
@@ -214,8 +218,28 @@
 					</div>
 
 					<!-- Live Preview -->
-					<div class="alert alert-info">
+					<div class="alert alert-info mb-0">
 						<strong>Live Preview:</strong> {matchCount} email(s) currently match this rule
+						{#if matchCount > 0}
+							<div class="matching-emails-list mt-2">
+								{#each matchingEmails.slice(0, showAllMatches ? undefined : 5) as email}
+									<div class="matching-email-item">
+										<span class="text-muted small">{email.from}</span>
+										<span class="mx-1">|</span>
+										<span class="small">{email.subject || '(No subject)'}</span>
+									</div>
+								{/each}
+								{#if matchCount > 5}
+									<button
+										type="button"
+										class="btn btn-link btn-sm p-0 mt-1"
+										onclick={() => (showAllMatches = !showAllMatches)}
+									>
+										{showAllMatches ? 'Show less' : `Show ${matchCount - 5} more`}
+									</button>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 				<div class="modal-footer">
@@ -256,5 +280,17 @@
 		border: 1px solid #dee2e6;
 		border-radius: 4px;
 		background-color: #f8f9fa;
+	}
+
+	.matching-emails-list {
+		max-height: 200px;
+		overflow-y: auto;
+	}
+
+	.matching-email-item {
+		padding: 2px 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 </style>
