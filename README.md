@@ -30,7 +30,17 @@ cp .env.example .env
    - Add redirect URI: `http://localhost:5173/auth/callback`
    - Copy Client ID and Client Secret to `.env`
 
-4. Start development server:
+4. Configure Gemini API key for AI features:
+   - Open Google AI Studio and create an API key
+   - Add the key to `.env` as:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+   - Without this key, AI grouping features will stay disabled
+
+5. Start development server:
 ```bash
 bun run dev
 ```
@@ -44,7 +54,7 @@ bun run dev
 
    (Note: The dev script uses `--bun` flag to ensure Bun runtime is used, required for `bun:sqlite` and other Bun-specific features)
 
-5. Open http://localhost:5173 and connect your Gmail account
+6. Open http://localhost:5173 and connect your Gmail account
 
 ## Tech Stack
 
