@@ -62,7 +62,7 @@ bun run dev
 - **Framework**: SvelteKit (Svelte 5 with runes)
 - **Database**: SQLite (bun:sqlite) + Drizzle ORM
 - **Gmail Integration**: googleapis npm package
-- **LLM**: Google Gemini API (to be integrated)
+- **LLM**: Google Gemini API
 - **Styling**: Bootstrap 4
 - **Adapter**: svelte-adapter-bun for production
 
