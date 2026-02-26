@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { emails, actionHistory, tokens } from '$lib/server/db/schema';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 import { reauthResponse } from '$lib/server/gmail/reauth';
 import { getRequiredAccountId } from '$lib/server/utils';
@@ -9,6 +9,8 @@ import { getRequiredAccountId } from '$lib/server/utils';
 export const GET: RequestHandler = async ({ url }) => {
 	const accountId = getRequiredAccountId(url);
 	if (accountId instanceof Response) return accountId;
+
+	const daysParam = url.searchParams.get('days');
 
 	try {
 		// Check if user is authenticated
@@ -18,7 +20,21 @@ export const GET: RequestHandler = async ({ url }) => {
 			return json(reauthResponse(), { status: 401 });
 		}
 
-		// Get all emails that have actions (not undone)
+		const conditions = [
+			eq(actionHistory.undone, false),
+			eq(actionHistory.accountId, accountId),
+			eq(emails.accountId, accountId)
+		];
+
+		// Apply date filter unless days=all
+		if (daysParam !== 'all') {
+			const days = daysParam ? parseInt(daysParam, 10) : 1;
+			const cutoff = new Date();
+			cutoff.setDate(cutoff.getDate() - days);
+			conditions.push(gt(actionHistory.timestamp, cutoff));
+		}
+
+		// Get emails that have actions (not undone)
 		const emailsWithActions = await db
 			.select({
 				email: emails,
@@ -26,13 +42,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			})
 			.from(actionHistory)
 			.innerJoin(emails, eq(actionHistory.emailId, emails.id))
-			.where(
-				and(
-					eq(actionHistory.undone, false),
-					eq(actionHistory.accountId, accountId),
-					eq(emails.accountId, accountId)
-				)
-			)
+			.where(and(...conditions))
 			.orderBy(desc(actionHistory.timestamp))
 			.all();
 

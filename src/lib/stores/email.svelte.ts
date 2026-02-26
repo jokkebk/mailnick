@@ -48,6 +48,25 @@ export class EmailState {
 		this.emailsWithActions = [];
 	}
 
+	actionDays = $state<number | 'all'>(1);
+
+	async loadActions(days?: number | 'all') {
+		if (!this.auth.selectedAccountId) return;
+
+		const daysParam = days ?? this.actionDays;
+		const actionsResponse = await fetch(
+			this.auth.accountUrl(`/api/emails/with-actions?days=${daysParam}`)
+		);
+		const actionsData = await actionsResponse.json().catch(() => ({}));
+
+		if (this.auth.handleReauthFromResponse(actionsResponse, actionsData)) return;
+
+		if (actionsResponse.ok) {
+			this.emailsWithActions = actionsData.emailsWithActions;
+			this.actionDays = daysParam;
+		}
+	}
+
 	async loadEmails() {
 		if (!this.auth.selectedAccountId) {
 			this.clearState();
@@ -63,7 +82,10 @@ export class EmailState {
 			);
 			const unreadData = await unreadResponse.json().catch(() => ({}));
 
-			const actionsResponse = await fetch(this.auth.accountUrl('/api/emails/with-actions'));
+			const daysParam = this.actionDays;
+			const actionsResponse = await fetch(
+				this.auth.accountUrl(`/api/emails/with-actions?days=${daysParam}`)
+			);
 			const actionsData = await actionsResponse.json().catch(() => ({}));
 
 			if (

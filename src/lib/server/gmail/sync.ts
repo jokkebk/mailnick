@@ -1,7 +1,7 @@
 import { getGmailClient } from './client';
 import { db } from '../db';
 import { emails, actionHistory } from '../db/schema';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 function extractDomain(email: string): string {
 	const match = email.match(/<(.+@(.+))>/);
@@ -104,21 +104,12 @@ export async function syncUnreadEmails(accountId: string, days: number = 7) {
 }
 
 /**
- * Clean up old action history and orphaned emails
- * - Deletes actions older than retention period
+ * Clean up orphaned emails before sync
+ * - Keeps all action history (no longer deletes old actions)
  * - Deletes emails not referenced by any action
  */
-export async function cleanupBeforeSync(accountId: string, actionRetentionDays: number = 2) {
-	// Calculate cutoff date for actions
-	const actionCutoff = new Date();
-	actionCutoff.setDate(actionCutoff.getDate() - actionRetentionDays);
-
-	// Delete old actions first
-	const deletedActionsResult = await db
-		.delete(actionHistory)
-		.where(and(eq(actionHistory.accountId, accountId), lt(actionHistory.timestamp, actionCutoff)));
-
-	// Get all email IDs that still have actions (these should be kept)
+export async function cleanupBeforeSync(accountId: string) {
+	// Get all email IDs that have actions (these should be kept)
 	const emailsWithActions = await db
 		.select({ emailId: actionHistory.emailId })
 		.from(actionHistory)
@@ -128,7 +119,6 @@ export async function cleanupBeforeSync(accountId: string, actionRetentionDays: 
 	const emailIdsToKeep = new Set(emailsWithActions.map(row => row.emailId));
 
 	// Delete orphaned emails (those not in the keep set)
-	// Note: SQLite doesn't support NOT IN with large sets efficiently, so we do it in batches
 	const allEmails = await db
 		.select({ id: emails.id })
 		.from(emails)
@@ -143,8 +133,5 @@ export async function cleanupBeforeSync(accountId: string, actionRetentionDays: 
 		deletedEmails++;
 	}
 
-	return {
-		deletedActions: deletedActionsResult.changes,
-		deletedEmails
-	};
+	return { deletedEmails };
 }

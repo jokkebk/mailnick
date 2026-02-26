@@ -285,9 +285,18 @@
 					<h3>
 						Recently Handled ({emailState.emailsWithActions.length})
 						<small class="text-muted" style="font-size: 0.6em;">
-							actions from last 2 days
+							{emailState.actionDays === 'all' ? 'all time' : 'last 24h'}
 						</small>
 					</h3>
+					<button
+						class="btn btn-sm btn-outline-secondary"
+						onclick={() => {
+							const newDays = emailState.actionDays === 'all' ? 1 : 'all';
+							emailState.loadActions(newDays);
+						}}
+					>
+						{emailState.actionDays === 'all' ? 'Show last 24h' : 'Show all history'}
+					</button>
 				</div>
 
 				<ActionsTable

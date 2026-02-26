@@ -9,14 +9,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		const body = await request.json().catch(() => ({}));
 		const days = body.days || 7; // Default to 7 days for unread emails
 		accountId = body.accountId as string | undefined;
-		const actionRetentionDays = 2; // Keep action history for 2 days
 
 		if (!accountId) {
 			return json({ error: 'Account ID is required' }, { status: 400 });
 		}
 
-		// Clean up old actions and orphaned emails first
-		const cleanupResult = await cleanupBeforeSync(accountId, actionRetentionDays);
+		// Clean up orphaned emails before sync
+		const cleanupResult = await cleanupBeforeSync(accountId);
 
 		// Then sync unread emails within the date range
 		const syncResult = await syncUnreadEmails(accountId, days);
