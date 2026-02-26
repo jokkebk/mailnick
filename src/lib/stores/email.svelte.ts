@@ -67,14 +67,14 @@ export class EmailState {
 		}
 	}
 
-	async loadEmails() {
+	async loadEmails(showSpinner = true) {
 		if (!this.auth.selectedAccountId) {
 			this.clearState();
 			this.auth.authenticated = false;
 			return;
 		}
 
-		this.loading = true;
+		if (showSpinner) this.loading = true;
 		this.error = null;
 		try {
 			const unreadResponse = await fetch(
@@ -140,7 +140,7 @@ export class EmailState {
 				localStorage.setItem(STORAGE_KEYS.syncDays, daysToSync.toString());
 				this.successMessage = `Synced ${data.syncedCount} new emails from last ${daysToSync} days (${data.totalUnread} total found)`;
 				this.clearHiddenTasks();
-				await this.loadEmails();
+				await this.loadEmails(false);
 			} else {
 				this.error = data.error || 'Failed to sync emails';
 			}
@@ -172,11 +172,11 @@ export class EmailState {
 			if (this.auth.handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = 'Email marked as read';
 		} catch {
 			this.error = 'Failed to mark as read';
-			await this.loadEmails();
+			await this.loadEmails(false);
 		}
 	}
 
@@ -195,11 +195,11 @@ export class EmailState {
 			if (this.auth.handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = 'Email archived';
 		} catch {
 			this.error = 'Failed to archive email';
-			await this.loadEmails();
+			await this.loadEmails(false);
 		}
 	}
 
@@ -218,11 +218,11 @@ export class EmailState {
 			if (this.auth.handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = 'Email moved to trash';
 		} catch {
 			this.error = 'Failed to trash email';
-			await this.loadEmails();
+			await this.loadEmails(false);
 		}
 	}
 
@@ -243,11 +243,11 @@ export class EmailState {
 			if (this.auth.handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed');
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = 'TODO label added';
 		} catch {
 			this.error = 'Failed to add label';
-			await this.loadEmails();
+			await this.loadEmails(false);
 		}
 	}
 
@@ -267,11 +267,11 @@ export class EmailState {
 			const failedCount = results.filter((r) => !r.ok).length;
 			if (failedCount > 0) throw new Error(`${failedCount} email(s) failed`);
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} marked as read`;
 		} catch (err) {
 			this.error = 'Failed to mark emails as read';
-			await this.loadEmails();
+			await this.loadEmails(false);
 			throw err;
 		}
 	}
@@ -292,11 +292,11 @@ export class EmailState {
 			const failedCount = results.filter((r) => !r.ok).length;
 			if (failedCount > 0) throw new Error(`${failedCount} email(s) failed`);
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} archived`;
 		} catch (err) {
 			this.error = 'Failed to archive emails';
-			await this.loadEmails();
+			await this.loadEmails(false);
 			throw err;
 		}
 	}
@@ -317,11 +317,11 @@ export class EmailState {
 			const failedCount = results.filter((r) => !r.ok).length;
 			if (failedCount > 0) throw new Error(`${failedCount} email(s) failed`);
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = `${emailIds.length} email${emailIds.length !== 1 ? 's' : ''} moved to trash`;
 		} catch (err) {
 			this.error = 'Failed to trash emails';
-			await this.loadEmails();
+			await this.loadEmails(false);
 			throw err;
 		}
 	}
@@ -346,11 +346,11 @@ export class EmailState {
 			const failedCount = results.filter((r) => !r.ok).length;
 			if (failedCount > 0) throw new Error(`${failedCount} email(s) failed`);
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = `TODO label added to ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`;
 		} catch (err) {
 			this.error = 'Failed to add labels';
-			await this.loadEmails();
+			await this.loadEmails(false);
 			throw err;
 		}
 	}
@@ -382,7 +382,7 @@ export class EmailState {
 			if (this.auth.handleReauthFromResponse(response, data)) return;
 			if (!response.ok) throw new Error('Failed to undo');
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = 'Action undone';
 		} catch {
 			this.error = 'Failed to undo action';
@@ -402,11 +402,11 @@ export class EmailState {
 			const failedCount = results.filter((r) => !r.ok).length;
 			if (failedCount > 0) throw new Error(`${failedCount} action(s) failed`);
 
-			await this.loadEmails();
+			await this.loadEmails(false);
 			this.successMessage = `${actionIds.length} action${actionIds.length !== 1 ? 's' : ''} undone`;
 		} catch (err) {
 			this.error = 'Failed to undo actions';
-			await this.loadEmails();
+			await this.loadEmails(false);
 			throw err;
 		}
 	}
