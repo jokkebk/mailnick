@@ -26,12 +26,15 @@ cp .env.example .env
    - Create a project at console.cloud.google.com
    - Enable Gmail API
    - Configure OAuth consent screen
+   - If OAuth app audience is **External** and publishing status is **Testing** (developer mode), add all allowed accounts under **Audience -> Test users** (including your own). Only whitelisted test users can authorize the app.
    - Create OAuth 2.0 credentials (Web application)
    - Add redirect URI: `http://localhost:5173/auth/callback`
    - Copy Client ID and Client Secret to `.env`
 
 4. Configure Gemini API key for AI features:
    - Open Google AI Studio and create an API key
+   - AI Studio keys are usually configuration-light: for this app, you typically don't need to manually enable extra APIs in Cloud Console
+   - If you use a manually managed Cloud API key instead, ensure it's allowed for the Generative Language API
    - Add the key to `.env` as:
 
 ```env
