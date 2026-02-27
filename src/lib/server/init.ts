@@ -1,7 +1,7 @@
+import { env } from '$env/dynamic/private';
 import { Database } from 'bun:sqlite';
 import { mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
-import { DATABASE_PATH } from '$env/static/private';
 
 let initialized = false;
 
@@ -54,9 +54,9 @@ function runMigrations() {
 	console.log('🔄 Checking database schema...');
 
 	// Ensure data directory exists
-	mkdirSync(dirname(DATABASE_PATH), { recursive: true });
+	mkdirSync(dirname(env.DATABASE_PATH), { recursive: true });
 
-	const db = new Database(DATABASE_PATH, { create: true });
+	const db = new Database(env.DATABASE_PATH, { create: true });
 
 	// Run migrations (idempotent - safe to run multiple times)
 	const migration = `

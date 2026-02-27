@@ -75,3 +75,22 @@ bun run dev
 bun run build
 cd build && bun run index.js
 ```
+
+## Standalone Mac Binary
+
+Pre-built binaries are available on the [Releases](../../releases) page for Apple Silicon (arm64) and Intel (x86_64) Macs. No Bun installation required.
+
+1. Download and extract the release for your architecture
+2. Copy `.env.example` to `.env` and configure your credentials
+3. Run `./mailnick`
+
+On first run, macOS Gatekeeper may block the unsigned binary. To allow it:
+```bash
+xattr -cr mailnick
+```
+
+To build a binary locally:
+```bash
+bun run build:binary
+```
+The binary will be at `dist/mailnick`. Copy the `build/client/` directory next to it before running.

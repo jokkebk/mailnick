@@ -1,14 +1,15 @@
 {
 	"name": "mailnick",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "bunx --bun vite dev",
-		"build": "vite build",
+		"build": "bunx --bun vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"build:binary": "bun run build && cd build && bun build --compile --minify ./index.js --outfile ../dist/mailnick"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^3.0.0",
