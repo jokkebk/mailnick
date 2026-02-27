@@ -9,7 +9,7 @@
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"build:binary": "bun run build && cd build && bun build --compile --minify ./index.js --outfile ../dist/mailnick"
+		"build:binary": "bun run build && node -e \"let f=require('fs'),p='build/handler.js';f.writeFileSync(p,f.readFileSync(p,'utf8').replace('path.dirname(fileURLToPath(new URL(import.meta.url)))','path.dirname(process.execPath)'))\" && cd build && bun build --compile --minify ./index.js --outfile ../dist/mailnick && cp -r client ../dist/"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^3.0.0",

@@ -80,17 +80,30 @@ cd build && bun run index.js
 
 Pre-built binaries are available on the [Releases](../../releases) page for Apple Silicon (arm64) and Intel (x86_64) Macs. No Bun installation required.
 
-1. Download and extract the release for your architecture
-2. Copy `.env.example` to `.env` and configure your credentials
-3. Run `./mailnick`
+### Quick start from release
 
-On first run, macOS Gatekeeper may block the unsigned binary. To allow it:
+1. Download the `.tar.gz` for your Mac architecture (arm64 for Apple Silicon, x86_64 for Intel)
+2. Extract it:
+```bash
+tar -xzf mailnick-arm64.tar.gz
+cd mailnick
+```
+3. Copy `.env.example` to `.env` and configure your Google OAuth credentials and other settings (see [Setup](#setup) step 3 onwards for details)
+4. On macOS, you may need to remove the quarantine flag first:
 ```bash
 xattr -cr mailnick
 ```
+5. Run the app:
+```bash
+./mailnick
+```
+6. Open http://localhost:3000 and connect your Gmail account
 
-To build a binary locally:
+The `client/` directory must stay next to the `mailnick` binary — it contains the web UI assets.
+
+### Building locally
+
 ```bash
 bun run build:binary
 ```
-The binary will be at `dist/mailnick`. Copy the `build/client/` directory next to it before running.
+This produces `dist/mailnick` and `dist/client/`. Run the binary from inside `dist/`.

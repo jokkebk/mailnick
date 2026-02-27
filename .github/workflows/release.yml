@@ -25,12 +25,9 @@ jobs:
 
       - name: Build SvelteKit app
         run: bun run build
-        env:
-          GOOGLE_CLIENT_ID: placeholder
-          GOOGLE_CLIENT_SECRET: placeholder
-          GOOGLE_REDIRECT_URI: http://localhost:3000/auth/callback
-          GEMINI_API_KEY: placeholder
-          DATABASE_PATH: ./data/emails.db
+
+      - name: Patch asset path for compiled binary
+        run: sed -i '' 's|path.dirname(fileURLToPath(new URL(import.meta.url)))|path.dirname(process.execPath)|' build/handler.js
 
       - name: Compile binary
         run: cd build && bun build --compile --minify ./index.js --outfile mailnick
