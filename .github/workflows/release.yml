@@ -7,14 +7,7 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-14
-            arch: arm64
-          - runner: macos-13
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -38,12 +31,12 @@ jobs:
           cp build/mailnick release/mailnick/
           cp -r build/client release/mailnick/
           cp .env.example release/mailnick/
-          cd release && tar -czf mailnick-${{ matrix.arch }}.tar.gz mailnick
+          cd release && tar -czf mailnick-arm64.tar.gz mailnick
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mailnick-${{ matrix.arch }}
-          path: release/mailnick-${{ matrix.arch }}.tar.gz
+          name: mailnick-arm64
+          path: release/mailnick-arm64.tar.gz
 
   release:
     needs: build
