@@ -25,6 +25,9 @@ jobs:
       - name: Compile binary
         run: cd build && bun build --compile --minify ./index.js --outfile mailnick
 
+      - name: Ad-hoc codesign binary
+        run: codesign --force --sign - build/mailnick
+
       - name: Package release
         run: |
           mkdir -p release/mailnick
